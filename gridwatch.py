@@ -93,7 +93,7 @@ DEFAULT_CONFIG = {
     # Quadkey zoom sweep. KUBRA serves cluster tiles at multiple zooms;
     # deeper zoom = more tile fetches but individual (non-clustered) outages.
     "zoom_min": 8,
-    "zoom_max": 12,
+    "zoom_max": 14,
     # Weather thresholds for calling an outage "weather-plausible"
     "wind_gust_kmh_threshold": 45.0,   # ~28 mph gusts
     "wind_sustained_kmh_threshold": 32.0,  # ~20 mph sustained
@@ -268,53 +268,83 @@ class Kubra:
             return None
 
     def fetch_outages(self):
-        """Adaptive quadkey descent using the live URL template. If a coarse
-        zoom has no tiles at all (deployment may not generate them), widen
-        blindly one level deeper before giving up."""
+        """Descend the quadkey pyramid. KUBRA item ids are only unique WITHIN
+        a tile (e.g. '8-0'), so records are keyed by id+coords. Cluster
+        markers are drilled into until they resolve to individual incidents
+        (or zoom_max); a cluster is only kept if its children never resolved,
+        so nothing is double-counted."""
         state = self.current_state()
         template = self._extract_template(state)
         layer = self.cfg.get("kubra_layer", "cluster-5")
         print(f"[i] template: {template} | layer: {layer}")
-        outages = {}
         cfg = self.cfg
         bbox = self.region.get("bbox") or cfg["bbox"]
+        incidents = {}          # key -> record (non-cluster, authoritative)
+        pending_clusters = {}   # qk -> [cluster records] kept only if unresolved
+        answered_qks = set()    # every tile that returned a payload
+
+        def key(rec):
+            return f"{rec['outage_id']}@{rec['lat']:.4f},{rec['lon']:.4f}"
+
+        # find the top of the tile pyramid
         zoom = cfg["zoom_min"]
         frontier = quadkeys_for_bbox(bbox, zoom)
-        while frontier and zoom <= cfg["zoom_max"]:
-            next_frontier, found, any_tile = [], 0, False
+        while zoom <= cfg["zoom_max"]:
+            next_frontier, n_inc, n_clu, any_tile = [], 0, 0, False
             for qk in frontier:
                 payload = self._fetch_tile(template, layer, qk)
-                time.sleep(0.05)  # be polite
+                time.sleep(0.04)
                 if payload is None:
                     continue
                 any_tile = True
+                answered_qks.add(qk)
+                tile_clusters = []
                 for item in payload.get("file_data", []):
                     rec = self._parse_item(item)
                     if not rec:
                         continue
-                    # deeper-zoom (de-clustered) records overwrite shallow ones
-                    outages[rec["outage_id"]] = rec
-                    found += 1
-                # descend: clusters split into individual incidents deeper
-                next_frontier.extend(qk + d for d in "0123")
-            print(f"[i] zoom {zoom}: {len(frontier)} tiles requested, "
-                  f"{found} records ({len(outages)} unique so far)")
-            if not any_tile and zoom < cfg["zoom_max"] and not outages:
-                # no tiles at this zoom AND nothing found yet: the tile
-                # pyramid starts deeper — widen blindly one level. (Once we
-                # have records, an empty zoom means we're past the bottom.)
+                    if rec["cluster"] and zoom < cfg["zoom_max"]:
+                        tile_clusters.append(rec)
+                        n_clu += 1
+                    else:
+                        incidents[key(rec)] = rec
+                        n_inc += 1
+                if tile_clusters:
+                    pending_clusters[qk] = tile_clusters
+                    next_frontier.extend(qk + d for d in "0123")
+                    # children resolved anything under this tile; drop parents
+                    # of deeper pending clusters once children respond
+            print(f"[i] zoom {zoom}: {len(frontier)} tiles, "
+                  f"{n_inc} incidents, {n_clu} clusters pending "
+                  f"({len(incidents)} unique incidents so far)")
+            if not any_tile and not incidents and not pending_clusters \
+                    and zoom < cfg["zoom_max"]:
                 next_frontier = quadkeys_for_bbox(bbox, zoom + 1)
-                print(f"[i] no tiles at zoom {zoom}; widening to zoom {zoom+1} "
-                      f"({len(next_frontier)} tiles)")
+                print(f"[i] no tiles at zoom {zoom}; widening to {zoom+1}")
             frontier, zoom = next_frontier, zoom + 1
-        if not outages:
+            if not frontier:
+                break
+
+        # A cluster's contents are re-emitted by whichever of its child
+        # tiles exist. If NONE of its 4 children answered, the pyramid ends
+        # here and the cluster is a leaf — keep it or lose its customers.
+        kept_clusters = 0
+        for qk, recs in pending_clusters.items():
+            if any((qk + d) in answered_qks for d in "0123"):
+                continue  # superseded by deeper data
+            for rec in recs:
+                incidents[key(rec)] = rec
+                kept_clusters += 1
+        if kept_clusters:
+            print(f"[i] kept {kept_clusters} unresolved cluster markers")
+        if not incidents:
             print("[!] Zero outages parsed. If the FE map visibly shows "
                   "outages right now, the layer name may differ — grab a "
                   "tile URL from DevTools (filter 'cluster') and set "
                   "'kubra_layer' in gridwatch_config.json to match.")
-        for o in outages.values():
+        for o in incidents.values():
             o["region"] = self.region["name"]
-        return list(outages.values())
+        return list(incidents.values())
 
     @staticmethod
     def _parse_item(item):

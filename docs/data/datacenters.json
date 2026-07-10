@@ -1,0 +1,91 @@
+{
+  "_notes": [
+    "Data center sites in FirstEnergy territory across OH/PA/NJ/MD/WV.",
+    "verify:true = coordinates are TOWN/AREA-LEVEL APPROXIMATE. Pull actual parcels from county GIS before treating proximity distances as precise. The 8km ring absorbs town-level error, but fix them anyway.",
+    "status: operating | construction | announced | contested (moratorium/litigation/paused)",
+    "Sourcing trail per site is in 'source'. Ongoing additions: PUCO/PaPUC large-load dockets, FE investor decks, county commissioner minutes, stopohiodatacenters.org tracker, datacentermap.com, cleanview.co.",
+    "CONTROL- prefixed sites are for the confounder test: exurban growth corridors WITHOUT data centers. Add 3-4 of your own; matched on county type."
+  ],
+  "sites": [
+    {
+      "name": "SoftBank/Stargate Lordstown (former GM/Foxconn plant)",
+      "operator": "SoftBank / Stargate LLC",
+      "lat": 41.1608,
+      "lon": -80.8577,
+      "status": "construction",
+      "territory": "Ohio Edison",
+      "verify": true,
+      "source": "Foxconn->SoftBank sale announced Aug 2025 ($375M, $3B planned investment); Stargate AI data center photographed under construction Oct 2025 (Bloomberg). Former Lordstown Assembly, 6.2M sqft."
+    },
+    {
+      "name": "Bristolville 25 - Lordstown 133-acre campus",
+      "operator": "Bristolville 25 Developer LLC / BHGH Properties",
+      "lat": 41.171,
+      "lon": -80.845,
+      "status": "contested",
+      "territory": "Ohio Edison",
+      "verify": true,
+      "source": "$3.6B, 1.65M sqft on 133 acres near former GM site. Village moratorium expires July 4 2026; developer mandamus pending at Ohio Supreme Court; Sept 2026 construction target per filings."
+    },
+    {
+      "name": "Meta Bowling Green",
+      "operator": "Meta",
+      "lat": 41.3748,
+      "lon": -83.6513,
+      "status": "construction",
+      "territory": "Toledo Edison",
+      "verify": true,
+      "source": "Announced April 2025; FE Q1 2025 investor materials place it in Toledo Edison territory."
+    },
+    {
+      "name": "Perry Township (Stark Co.) 100-acre project",
+      "operator": "TBD",
+      "lat": 40.792,
+      "lon": -81.46,
+      "status": "contested",
+      "territory": "Ohio Edison",
+      "verify": true,
+      "source": "100 acres farmland; paused pending Ohio EPA / utility conditions (Ideastream, Feb 2026)."
+    },
+    {
+      "name": "Ravenna proposed site (Portage Co.)",
+      "operator": "TBD",
+      "lat": 41.1575,
+      "lon": -81.242,
+      "status": "contested",
+      "territory": "Ohio Edison",
+      "verify": true,
+      "source": "Proposed across from UH Portage Medical Center; city passed 1-year moratorium April 20 2026."
+    },
+    {
+      "name": "Homer City Energy Campus",
+      "operator": "Homer City Redevelopment / Kiewit",
+      "lat": 40.514,
+      "lon": -79.195,
+      "status": "construction",
+      "territory": "Penelec",
+      "verify": true,
+      "source": "3,200-acre former coal plant; up to 4.5GW on-site gas; interconnects with FirstEnergy PA (Penelec) per Utility Dive Apr 2025; power production targeted 2027; PA DEP air permit Nov 2025. NOTE: largely self-powered - distribution impact is construction-phase + interconnection work."
+    },
+    {
+      "name": "Upper Burrell project (Westmoreland Co.)",
+      "operator": "TBD",
+      "lat": 40.562,
+      "lon": -79.697,
+      "status": "announced",
+      "territory": "West Penn Power",
+      "verify": true,
+      "source": "One of five western-PA gas-powered DC projects (TribLive, Mar 2026). Confirm territory + parcel."
+    },
+    {
+      "name": "CONTROL - add exurban growth corridor w/o DC",
+      "operator": "n/a",
+      "lat": 0.0,
+      "lon": 0.0,
+      "status": "control",
+      "territory": "?",
+      "verify": true,
+      "source": "Placeholder: pick 3-4 growth corridors with active construction but NO data center, matched by county type. This is your confounder test. Delete or fill."
+    }
+  ]
+}

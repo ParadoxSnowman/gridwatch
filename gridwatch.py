@@ -82,7 +82,22 @@ DEFAULT_CONFIG = {
          "entry": "https://outages-wv.firstenergycorp.com/",
          "instance_id": "", "view_id": "",
          "bbox": {"west": -82.7, "south": 37.1, "east": -77.7, "north": 40.7}},
+        {"name": "OH-AEP", "provider": "ifactor",
+         "base": "https://outagemap.aepohio.com",
+         "entry": "https://outagemap.aepohio.com/",
+         "bbox": {"west": -84.9, "south": 38.3, "east": -80.6, "north": 41.4}},
+        {"name": "OH-AES", "provider": "ifactor",
+         "base": "https://outagemap.aes-ohio.com",
+         "entry": "https://outagemap.aes-ohio.com/",
+         "bbox": {"west": -84.9, "south": 39.3, "east": -83.5, "north": 40.4}},
+        {"name": "OH-DUKE",
+         "entry": "https://outagemap.duke-energy.com/",
+         "instance_id": "", "view_id": "",
+         "bbox": {"west": -84.9, "south": 38.8, "east": -83.6, "north": 39.6}},
     ],
+    # Alerting: file a GitHub issue when a DC-proximate fair-weather outage
+    # of at least this many customers appears (CI only; needs issues:write)
+    "alert_min_customers": 50,
     # Legacy single-region keys (still honored if regions is empty)
     "kubra_instance_id": "",
     "kubra_view_id": "",
@@ -254,13 +269,20 @@ class Kubra:
     def _qkh(quadkey):
         return quadkey[-3:][::-1]
 
-    def _tile_url(self, template, layer, qk):
-        path = template.replace("{qkh}", self._qkh(qk))
-        return f"{KUBRA_BASE}/{path}/public/{layer}/{qk}.json"
+    def _prepare(self):
+        state = self.current_state()
+        template = self._extract_template(state)
+        layer = self.cfg.get("kubra_layer", "cluster-5")
+        print(f"[i] [{self.region['name']}] kubra template: {template} | layer: {layer}")
+        return {"template": template, "layer": layer}
 
-    def _fetch_tile(self, template, layer, qk):
+    def _tile_url(self, ctx, qk):
+        path = ctx["template"].replace("{qkh}", self._qkh(qk))
+        return f"{KUBRA_BASE}/{path}/public/{ctx['layer']}/{qk}.json"
+
+    def _fetch_tile(self, ctx, qk):
         try:
-            r = self.s.get(self._tile_url(template, layer, qk), timeout=20)
+            r = self.s.get(self._tile_url(ctx, qk), timeout=20)
             if r.status_code != 200:
                 return None
             return r.json()
@@ -273,10 +295,7 @@ class Kubra:
         markers are drilled into until they resolve to individual incidents
         (or zoom_max); a cluster is only kept if its children never resolved,
         so nothing is double-counted."""
-        state = self.current_state()
-        template = self._extract_template(state)
-        layer = self.cfg.get("kubra_layer", "cluster-5")
-        print(f"[i] template: {template} | layer: {layer}")
+        ctx = self._prepare()
         cfg = self.cfg
         bbox = self.region.get("bbox") or cfg["bbox"]
         incidents = {}          # key -> record (non-cluster, authoritative)
@@ -292,7 +311,7 @@ class Kubra:
         while zoom <= cfg["zoom_max"]:
             next_frontier, n_inc, n_clu, any_tile = [], 0, 0, False
             for qk in frontier:
-                payload = self._fetch_tile(template, layer, qk)
+                payload = self._fetch_tile(ctx, qk)
                 time.sleep(0.04)
                 if payload is None:
                     continue
@@ -402,6 +421,55 @@ class Kubra:
             "etr": str(etr),
             "cluster": bool(desc.get("cluster") or item.get("title") == "cluster"),
         }
+
+class IFactor(Kubra):
+    """Legacy iFactor/KUBRA-classic maps (AEP Ohio, AES Ohio family).
+    Scheme: {base}/resources/data/external/interval_generation_data/
+              metadata.json  -> {"directory": "<stamp>"}
+              {stamp}/outages/{quadkey}.json  -> same file_data schema.
+    The region entry needs only: {"provider":"ifactor","base":"https://outagemap.aepohio.com"}.
+    If the default paths 404, DevTools on the map (filter 'metadata' or
+    'outages') shows the live ones; override with region["data_path"]."""
+
+    def _prepare(self):
+        base = self.region["base"].rstrip("/")
+        data_path = self.region.get(
+            "data_path", "resources/data/external/interval_generation_data")
+        meta_candidates = [f"{base}/{data_path}/metadata.json",
+                           f"{base}/{data_path}/metadata.xml"]
+        directory = None
+        for mu in meta_candidates:
+            try:
+                r = self.s.get(mu, timeout=20)
+                if r.status_code != 200:
+                    continue
+                if mu.endswith(".json"):
+                    directory = r.json().get("directory")
+                else:
+                    m = re.search(r"<directory>([^<]+)</directory>", r.text)
+                    directory = m.group(1) if m else None
+                if directory:
+                    break
+            except (requests.RequestException, ValueError):
+                continue
+        if not directory:
+            raise RuntimeError(
+                f"[{self.region['name']}] iFactor metadata not found at "
+                f"{meta_candidates}. Open the utility map with DevTools, "
+                f"filter 'metadata', and set region['base']/'data_path' to match.")
+        print(f"[i] [{self.region['name']}] ifactor directory: {directory}")
+        return {"base": base, "data_path": data_path, "dir": directory}
+
+    def _tile_url(self, ctx, qk):
+        return (f"{ctx['base']}/{ctx['data_path']}/{ctx['dir']}/"
+                f"outages/{qk}.json")
+
+
+def make_provider(cfg, region):
+    if region.get("provider", "kubra") == "ifactor":
+        return IFactor(cfg, region=region)
+    return Kubra(cfg, region=region)
+
 
 # ----------------------------------------------------------------------------
 # Weather enrichment: Open-Meteo hourly (no key) + NWS active alerts
@@ -701,14 +769,19 @@ def _old_discover(cfg):
               ".../stormcenters/{INSTANCE_ID}/views/{VIEW_ID}/currentState")
 
 
+def _region_ready(r):
+    if r.get("provider") == "ifactor":
+        return bool(r.get("base"))
+    return bool(r.get("instance_id") and r.get("view_id"))
+
+
 def _regions(cfg):
-    regs = [r for r in cfg.get("regions", []) if r.get("instance_id") and r.get("view_id")]
+    regs = [r for r in cfg.get("regions", []) if _region_ready(r)]
     if not regs and cfg.get("kubra_instance_id"):
         regs = [{"name": "OH", "entry": cfg.get("utility_entry_url", ""),
                  "instance_id": cfg["kubra_instance_id"],
                  "view_id": cfg["kubra_view_id"], "bbox": cfg.get("bbox")}]
-    skipped = [r["name"] for r in cfg.get("regions", [])
-               if not (r.get("instance_id") and r.get("view_id"))]
+    skipped = [r["name"] for r in cfg.get("regions", []) if not _region_ready(r)]
     if skipped:
         print(f"[i] regions without GUIDs (skipped): {', '.join(skipped)} — "
               f"grab from DevTools on each state's outage page")
@@ -727,7 +800,7 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
     for region in regions:
         print(f"=== region {region['name']} ===")
         try:
-            outages = Kubra(cfg, region=region).fetch_outages()
+            outages = make_provider(cfg, region).fetch_outages()
         except Exception as e:
             print(f"[!] region {region['name']} failed: {e}")
             continue
@@ -777,9 +850,60 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
         auto_path = os.path.join(emit_dir, "datacenters_auto.json")
         if _auto_layer_stale(auto_path):
             fetch_auto_datacenters(cfg, auto_path)
+        _maybe_alert(emit_dir, emitted, cfg)
     print("[i] Snapshot classification:")
     for cls, n in sorted(counts.items(), key=lambda x: -x[1]):
         print(f"    {n:>4}  {cls}")
+
+
+def _maybe_alert(emit_dir, records, cfg):
+    """CI-only: file a GitHub issue when a NEW DC-proximate fair-weather
+    outage >= alert_min_customers appears. Watching the repo = free
+    email/push notifications. Requires GITHUB_TOKEN + issues:write."""
+    token = os.environ.get("GITHUB_TOKEN")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if not token or not repo:
+        return
+    hits = [r for r in records
+            if r["dc_flag"] and not r["weather_flag"]
+            and (r["customers"] or 0) >= cfg.get("alert_min_customers", 50)]
+    if not hits:
+        return
+    seen_path = os.path.join(emit_dir, "alerted.json")
+    try:
+        with open(seen_path) as f:
+            seen = set(json.load(f))
+    except (OSError, ValueError):
+        seen = set()
+    new_hits = []
+    for r in hits:
+        k = f"{r['region']}|{r['outage_id']}|{r['lat']:.4f},{r['lon']:.4f}"
+        if k not in seen:
+            new_hits.append(r)
+            seen.add(k)
+    if not new_hits:
+        return
+    lines = [f"- **{r['dc_name']}** ({r['dc_km']} km): {r['customers']} customers, "
+             f"[{r['region']}] cause: {r['cause'] or 'none given'} — {r['rationale']}"
+             for r in new_hits]
+    body = ("Automated GRIDWATCH alert — fair-weather outage(s) inside a data "
+            "center proximity ring:\n\n" + "\n".join(lines) +
+            f"\n\nPolled at {new_hits[0]['polled_at']}. One snapshot is not "
+            "evidence; check persistence on the dashboard.")
+    title = (f"[GRIDWATCH] {len(new_hits)} DC-proximate fair-weather outage(s) "
+             f"— {new_hits[0]['polled_at'][:10]}")
+    try:
+        resp = requests.post(
+            f"https://api.github.com/repos/{repo}/issues",
+            json={"title": title, "body": body, "labels": ["gridwatch-alert"]},
+            headers={"Authorization": f"Bearer {token}",
+                     "Accept": "application/vnd.github+json"}, timeout=20)
+        print(f"[i] alert issue: HTTP {resp.status_code}")
+        if resp.status_code == 201:
+            with open(seen_path, "w") as f:
+                json.dump(sorted(seen), f)
+    except requests.RequestException as e:
+        print(f"[!] alert failed (non-fatal): {e}")
 
 
 def _emit_json(emit_dir, polled_at, records, cfg):
@@ -796,15 +920,30 @@ def _emit_json(emit_dir, polled_at, records, cfg):
     with open(os.path.join(emit_dir, "history", f"{day}.ndjson"), "a") as f:
         for r in records:
             f.write(json.dumps(r, separators=(",", ":")) + "\n")
-    # rebuild the day index (static hosting can't list directories)
+    # rebuild the day index with per-day summaries (unique/fair/weather)
     hist_dir = os.path.join(emit_dir, "history")
     days = []
     for fn in sorted(os.listdir(hist_dir)):
-        if fn.endswith(".ndjson"):
-            p = os.path.join(hist_dir, fn)
-            with open(p) as fh:
-                n = sum(1 for _ in fh)
-            days.append({"date": fn[:-7], "records": n})
+        if not fn.endswith(".ndjson"):
+            continue
+        p = os.path.join(hist_dir, fn)
+        uniq = {}
+        n = 0
+        with open(p) as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                n += 1
+                try:
+                    r = json.loads(line)
+                    uniq[f"{r.get('region')}|{r.get('outage_id')}"] = r
+                except ValueError:
+                    continue
+        fair = sum(1 for r in uniq.values() if not r.get("weather_flag"))
+        cust = sum(r.get("customers") or 0 for r in uniq.values())
+        days.append({"date": fn[:-7], "records": n, "unique": len(uniq),
+                     "fair": fair, "weather": len(uniq) - fair,
+                     "customers": cust})
     with open(os.path.join(hist_dir, "index.json"), "w") as f:
         json.dump({"days": days}, f, separators=(",", ":"))
     # copy the DC + infrastructure layers alongside so the page has one data root

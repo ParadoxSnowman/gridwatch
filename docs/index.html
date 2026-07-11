@@ -90,8 +90,10 @@
     <div id="tab-evidence" style="display:none">
       <div class="card"><h2>The claim under test</h2>
         <div class="meta">Fair-weather distribution outages cluster near data
-        center sites (esp. under construction) at a higher rate than the rest
-        of the territory. Window: <span id="ev-window">—</span></div>
+        center sites <b>in active change</b> (construction/contested/announced)
+        at a higher rate than the rest of the territory. Operating sites are
+        scored below but excluded from the headline ratio — they sit in dense
+        urban feeders and would confound it. Window: <span id="ev-window">—</span></div>
         <div class="kpis" style="margin-top:10px">
           <div class="kpi"><div class="lbl">fair-weather share, in DC rings</div>
             <div class="big" id="kpi-near">—</div></div>
@@ -140,8 +142,9 @@ const map = L.map("map").setView([41.0, -80.9], 7);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
   { attribution: "&copy; OSM &copy; CARTO", maxZoom: 18 }).addTo(map);
 
-let DCS = [], AUTO = [], RADIUS = 8, groups = {},
-    dcLayer = L.layerGroup().addTo(map), autoLayer = L.layerGroup();
+let DCS = [], AUTO = [], INFRA = [], RADIUS = 8, groups = {},
+    dcLayer = L.layerGroup().addTo(map), autoLayer = L.layerGroup(),
+    infraLayer = L.layerGroup().addTo(map);
 const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hav = (a,b,c,d) => { const R=6371,p=Math.PI/180,
@@ -225,6 +228,30 @@ function drawAuto(){
   list.appendChild(row);
 }
 
+function drawInfra(){
+  infraLayer.clearLayers();
+  for (const p of INFRA){
+    if (!p.lat) continue;
+    const col = p.status==="complete" ? "#fbbf24" : "#f97316";
+    L.circleMarker([p.lat,p.lon],{radius:6,color:col,fillColor:col,
+      fillOpacity:.9,weight:2,className:"infra"})
+      .bindPopup(`<b>⚡ ${esc(p.name)}</b><br>${esc(p.type)} — ${esc(p.status)}
+        <br><span style="color:#8a90a2">${esc(p.territory)}</span>
+        <br><span style="color:#8a90a2;font-size:11px">${esc(p.source)}</span>
+        ${p.verify?'<br><i style="color:#f59e0b">coords approximate</i>':''}`)
+      .addTo(infraLayer);
+  }
+  if (!INFRA.length) return;
+  const list = document.getElementById("sitelist");
+  const row = document.createElement("div"); row.className="row";
+  row.innerHTML = `<span class="dot" style="background:#f97316"></span>
+    <span>Grid upgrade projects (⚡)</span><span class="cnt">${INFRA.length}</span>`;
+  row.onclick = () => {
+    if (map.hasLayer(infraLayer)){map.removeLayer(infraLayer);row.classList.add("off");}
+    else {map.addLayer(infraLayer);row.classList.remove("off");} };
+  list.appendChild(row);
+}
+
 function dedupe(records){
   const m = new Map();
   for (const r of records) m.set(r.region+"|"+r.outage_id, r); // last wins
@@ -241,8 +268,10 @@ async function fetchDay(date){
 // sites participate, independent of server-side flags ----------
 function evidence(records){
   const uniq = dedupe(records);
-  const real = DCS.filter(s=>s.lat && s.status!=="control");
+  const ACTIVE = new Set(["construction","contested","announced"]);
+  const real = DCS.filter(s=>s.lat && ACTIVE.has(s.status));
   const ctls = DCS.filter(s=>s.lat && s.status==="control");
+  const oper = DCS.filter(s=>s.lat && (s.status||"").startsWith("operating"));
   let nearF=0,nearT=0,farF=0,farT=0;
   const perSite = new Map(DCS.filter(s=>s.lat).map(s=>[s.name,{status:s.status,f:0,t:0}]));
   for (const o of uniq){
@@ -250,7 +279,7 @@ function evidence(records){
     let inReal=false;
     for (const s of real) if (hav(o.lat,o.lon,s.lat,s.lon)<=RADIUS){
       inReal=true; const p=perSite.get(s.name); p.t++; if(fair)p.f++; }
-    for (const s of ctls) if (hav(o.lat,o.lon,s.lat,s.lon)<=RADIUS){
+    for (const s of ctls.concat(oper)) if (hav(o.lat,o.lon,s.lat,s.lon)<=RADIUS){
       const p=perSite.get(s.name); p.t++; if(fair)p.f++; }
     if (inReal){ nearT++; if(fair)nearF++; } else { farT++; if(fair)farF++; }
   }
@@ -289,14 +318,16 @@ function renderEvidence(records, windowLabel){
 // ---------- boot ----------
 let LATEST=null, INDEX=null;
 async function boot(){
-  const [latest, dcs, auto] = await Promise.all([
+  const [latest, dcs, auto, infra] = await Promise.all([
     fetch("data/latest.json").then(r=>r.json()),
     fetch("data/datacenters.json").then(r=>r.json()).catch(()=>({sites:[]})),
     fetch("data/datacenters_auto.json").then(r=>r.json()).catch(()=>({sites:[]})),
+    fetch("data/infrastructure.json").then(r=>r.json()).catch(()=>({projects:[]})),
   ]);
   LATEST = latest; DCS = dcs.sites||[]; AUTO = auto.sites||[];
+  INFRA = infra.projects||[];
   RADIUS = latest.dc_radius_km||8;
-  drawDCs(); drawAuto();
+  drawDCs(); drawAuto(); drawInfra();
   plot(latest.outages||[], document.getElementById("legend"),
        document.getElementById("live-meta"),
        `${latest.count} outages · updated ${latest.generated_at} UTC · auto-polls every 15 min`);

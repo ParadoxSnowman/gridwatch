@@ -3,66 +3,89 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GRIDWATCH — FirstEnergy outages × weather × data centers</title>
+<title>GRIDWATCH — outages × weather × data centers</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-  :root { --bg:#0b0e14; --panel:#12161f; --panel2:#171c28; --line:#232838;
-          --text:#d6d9e0; --dim:#8a90a2; --accent:#7aa2f7; --red:#ef4444;
-          --amber:#f59e0b; --blue:#3b82f6; --purple:#a855f7; }
+  :root { --bg:#0a0d13; --panel:#11151e; --panel2:#161c29; --line:#232a3b;
+          --text:#d8dbe4; --dim:#8b91a3; --accent:#7aa2f7; --red:#ef4444;
+          --amber:#f59e0b; --blue:#3b82f6; --purple:#a855f7; --green:#34d399; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
               font:14px/1.5 system-ui,'Segoe UI',Roboto,sans-serif; }
-  #app { display:grid; grid-template-columns: 360px 1fr; height:100%; }
+  #app { display:grid; grid-template-columns:380px 1fr; height:100%; }
   #side { background:var(--panel); border-right:1px solid var(--line);
-          overflow-y:auto; padding:16px; }
+          overflow-y:auto; padding:14px 16px; }
   #map { height:100%; }
-  h1 { font-size:16px; margin:0; letter-spacing:.08em; }
-  .sub { color:var(--dim); font-size:12px; margin:2px 0 12px; }
+  header { display:flex; align-items:baseline; gap:10px; }
+  h1 { font-size:17px; margin:0; letter-spacing:.1em; }
+  .pulse { width:8px; height:8px; border-radius:50%; background:var(--green);
+           box-shadow:0 0 0 0 rgba(52,211,153,.6); animation:pulse 2s infinite;
+           align-self:center; }
+  @keyframes pulse { 70%{box-shadow:0 0 0 9px rgba(52,211,153,0)} }
+  .sub { color:var(--dim); font-size:12px; margin:2px 0 10px; }
+  .kstrip { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px; }
+  .k { background:var(--panel2); border:1px solid var(--line); border-radius:9px;
+       padding:7px 9px; }
+  .k .v { font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .k .l { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
   .tabs { display:flex; gap:6px; margin-bottom:12px; }
   .tab { flex:1; text-align:center; padding:6px 4px; border:1px solid var(--line);
-         border-radius:8px; cursor:pointer; font-size:12.5px; color:var(--dim);
-         user-select:none; }
-  .tab.active { color:var(--text); background:var(--panel2); border-color:#33405e; }
+         border-radius:8px; cursor:pointer; font-size:12.5px; color:var(--dim); user-select:none; }
+  .tab.active { color:var(--text); background:var(--panel2); border-color:#3a4763; }
   .card { background:var(--panel2); border:1px solid var(--line); border-radius:10px;
           padding:12px; margin-bottom:12px; }
-  .card h2 { font-size:12px; margin:0 0 8px; color:var(--dim); letter-spacing:.1em;
+  .card h2 { font-size:11.5px; margin:0 0 8px; color:var(--dim); letter-spacing:.1em;
              text-transform:uppercase; }
   .row { display:flex; align-items:center; gap:8px; margin:4px 0; cursor:pointer;
          user-select:none; font-size:13px; }
   .dot { width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
   .cnt { margin-left:auto; color:var(--dim); font-variant-numeric:tabular-nums; }
   .off { opacity:.32; }
-  .big { font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { border:1px solid var(--line); border-radius:99px; padding:3px 11px;
+          font-size:12px; cursor:pointer; color:var(--dim); user-select:none; }
+  .chip.on { color:var(--text); border-color:var(--accent); background:rgba(122,162,247,.12); }
+  .big { font-size:25px; font-weight:700; font-variant-numeric:tabular-nums; }
   .kpis { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:8px;
-         padding:8px 10px; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
   .kpi .lbl { font-size:11px; color:var(--dim); }
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
   th,td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
-  th { color:var(--dim); font-weight:600; font-size:11px; text-transform:uppercase;
-       letter-spacing:.06em; }
+  th { color:var(--dim); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
   td.n { text-align:right; font-variant-numeric:tabular-nums; }
   select,button { background:var(--panel); color:var(--text); border:1px solid var(--line);
            border-radius:8px; padding:6px 10px; font:inherit; cursor:pointer; }
-  button:hover,select:hover { border-color:#33405e; }
+  button:hover,select:hover,.chip:hover { border-color:#3a4763; }
   .meta { color:var(--dim); font-size:12px; }
   .caveat { font-size:11px; color:var(--dim); margin-top:8px; }
-  #spark { display:flex; align-items:flex-end; gap:2px; height:46px; margin-top:6px; }
-  #spark div { flex:1; background:var(--accent); opacity:.7; border-radius:2px 2px 0 0;
-               min-height:2px; }
+  #tl { display:flex; align-items:flex-end; gap:3px; height:64px; margin:8px 0 2px; }
+  #tl .bar { flex:1; display:flex; flex-direction:column-reverse; cursor:pointer;
+             border-radius:2px 2px 0 0; overflow:hidden; min-width:6px; }
+  #tl .w { background:var(--blue); } #tl .f { background:var(--amber); }
+  #tl .bar:hover { outline:1px solid var(--accent); }
+  #spark { display:flex; align-items:flex-end; gap:2px; height:42px; margin-top:6px; }
+  #spark div { flex:1; background:var(--accent); opacity:.7; border-radius:2px 2px 0 0; min-height:2px; }
   .ratio-good { color:var(--amber); } .ratio-hot { color:var(--red); }
   .leaflet-popup-content-wrapper,.leaflet-popup-tip { background:var(--panel2); color:var(--text); }
-  .badge { font-size:10px; border:1px solid var(--line); border-radius:99px;
-           padding:1px 7px; color:var(--dim); }
-  @media (max-width:820px){ #app{grid-template-columns:1fr;grid-template-rows:1fr 45%;}
+  .badge { font-size:10px; border:1px solid var(--line); border-radius:99px; padding:1px 7px; color:var(--dim); }
+  @media (max-width:860px){ #app{grid-template-columns:1fr;grid-template-rows:1fr 46%;}
     #side{order:2;border-right:none;border-top:1px solid var(--line);} }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="side">
-    <h1>GRIDWATCH</h1>
-    <div class="sub">FirstEnergy outages &times; weather &times; data center proximity</div>
+    <header><h1>GRIDWATCH</h1><span class="pulse" title="auto-refreshing"></span>
+      <span class="meta" id="refresh">—</span></header>
+    <div class="sub">outages &times; weather &times; data center proximity — FirstEnergy + Ohio utilities</div>
+
+    <div class="kstrip">
+      <div class="k"><div class="v" id="s-out">—</div><div class="l">outages</div></div>
+      <div class="k"><div class="v" id="s-cust">—</div><div class="l">customers</div></div>
+      <div class="k"><div class="v" id="s-big">—</div><div class="l">largest</div></div>
+      <div class="k"><div class="v" id="s-reg">—</div><div class="l">feeds</div></div>
+    </div>
+
     <div class="tabs">
       <div class="tab active" data-tab="live">Live</div>
       <div class="tab" data-tab="history">History</div>
@@ -70,60 +93,62 @@
     </div>
 
     <div id="tab-live">
+      <div class="card"><h2>Regions</h2><div class="chips" id="regchips"></div></div>
       <div class="card"><h2>Classification</h2><div id="legend"></div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button id="csv">Export CSV</button>
+        </div>
         <div class="meta" id="live-meta" style="margin-top:8px">loading…</div></div>
-      <div class="card"><h2>Data center sites</h2><div id="sitelist"></div></div>
+      <div class="card"><h2>Sites & layers</h2><div id="sitelist"></div></div>
     </div>
 
     <div id="tab-history" style="display:none">
+      <div class="card"><h2>Timeline — unique outages/day</h2>
+        <div id="tl" title="amber = fair-weather share, blue = weather"></div>
+        <div class="meta" id="tl-meta">click a bar to load that day</div></div>
       <div class="card"><h2>Snapshot browser</h2>
         <div style="display:flex;gap:8px;align-items:center">
-          <select id="daysel"></select><button id="loadday">Load</button>
-        </div>
+          <select id="daysel"></select><button id="loadday">Load</button></div>
         <div class="meta" id="hist-meta" style="margin-top:8px"></div>
         <div id="spark" title="unique outages per hour (UTC)"></div>
-        <div class="caveat">History shows unique outages observed that day
-          (deduplicated across 15-min polls, last observation wins).</div>
-      </div>
+        <div class="caveat">Deduplicated across 15-min polls; last observation wins.</div></div>
     </div>
 
     <div id="tab-evidence" style="display:none">
       <div class="card"><h2>The claim under test</h2>
         <div class="meta">Fair-weather distribution outages cluster near data
         center sites <b>in active change</b> (construction/contested/announced)
-        at a higher rate than the rest of the territory. Operating sites are
-        scored below but excluded from the headline ratio — they sit in dense
-        urban feeders and would confound it. Window: <span id="ev-window">—</span></div>
-        <div class="kpis" style="margin-top:10px">
-          <div class="kpi"><div class="lbl">fair-weather share, in DC rings</div>
+        at a higher rate than elsewhere. Operating sites are scored below but
+        excluded from the headline — they sit in dense urban feeders and would
+        confound it.</div>
+        <div style="margin:10px 0 4px" class="chips" id="evwin">
+          <span class="chip" data-d="7">7d</span>
+          <span class="chip" data-d="14">14d</span>
+          <span class="chip on" data-d="30">30d</span>
+          <span class="chip" data-d="9999">all</span></div>
+        <div class="kpis">
+          <div class="kpi"><div class="lbl">fair-weather share, active-site rings</div>
             <div class="big" id="kpi-near">—</div></div>
           <div class="kpi"><div class="lbl">fair-weather share, elsewhere</div>
             <div class="big" id="kpi-far">—</div></div>
           <div class="kpi"><div class="lbl">ratio (near / elsewhere)</div>
             <div class="big" id="kpi-ratio">—</div></div>
           <div class="kpi"><div class="lbl">unique outages in window</div>
-            <div class="big" id="kpi-n">—</div></div>
-        </div>
-        <div class="caveat" id="ev-verdict"></div>
-      </div>
+            <div class="big" id="kpi-n">—</div></div></div>
+        <div class="caveat" id="ev-verdict"></div></div>
       <div class="card"><h2>Per-site scorecard</h2>
         <table id="sitetable"><thead><tr><th>site</th><th>status</th>
-          <th class="n">fair-wx</th><th class="n">total</th></tr></thead>
-          <tbody></tbody></table>
-        <div class="caveat">CONTROL rows are matched growth corridors with no
-        data center. If controls run as hot as DC sites, the signal is
-        "construction corridor," not "data center."</div>
-      </div>
+          <th class="n">fair-wx</th><th class="n">total</th></tr></thead><tbody></tbody></table>
+        <div class="caveat">CONTROL rows are matched growth corridors with no data
+        center. If controls run as hot as active sites, the signal is
+        "construction corridor," not "data center."</div></div>
       <div class="card"><h2>Honesty checklist</h2>
-        <div class="caveat">
-        &bull; One day is noise; weeks are evidence.<br>
+        <div class="caveat">&bull; One day is noise; weeks are evidence.<br>
         &bull; Weather flags: trailing-3h gusts/wind/precip/temp + NWS alerts +
-          utility-admitted weather causes.<br>
+        utility-admitted weather causes.<br>
         &bull; Operating DCs are transmission-interconnected; the plausible
-          mechanism is construction-phase distribution stress.<br>
-        &bull; This measures reliability. Rate/capacity impacts (PJM auctions,
-          bills) are a separate, real, different dataset.</div>
-      </div>
+        mechanism is construction-phase distribution stress.<br>
+        &bull; Reliability ≠ rates. PJM capacity costs are a separate dataset.</div></div>
     </div>
   </div>
   <div id="map"></div>
@@ -138,259 +163,280 @@ const COLORS = {
   "DC-PROXIMATE FAIR-WEATHER (construction-type cause)": "#b91c1c",
   "UNEXPLAINED FAIR-WEATHER": "#f59e0b",
 };
-const map = L.map("map").setView([41.0, -80.9], 7);
+const REFRESH_MS = 5*60*1000;
+const map = L.map("map").setView([40.7,-82.4], 7);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  { attribution: "&copy; OSM &copy; CARTO", maxZoom: 18 }).addTo(map);
+  {attribution:"&copy; OSM &copy; CARTO",maxZoom:18}).addTo(map);
 
-let DCS = [], AUTO = [], INFRA = [], RADIUS = 8, groups = {},
-    dcLayer = L.layerGroup().addTo(map), autoLayer = L.layerGroup(),
-    infraLayer = L.layerGroup().addTo(map);
-const esc = s => String(s ?? "").replace(/[&<>"]/g,
-  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const hav = (a,b,c,d) => { const R=6371,p=Math.PI/180,
+let DCS=[],AUTO=[],INFRA=[],RADIUS=8,groups={},LATEST=null,INDEX={days:[]},
+    activeRegions=new Set(), currentView="live";
+const dcLayer=L.layerGroup().addTo(map), autoLayer=L.layerGroup(),
+      infraLayer=L.layerGroup().addTo(map);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hav=(a,b,c,d)=>{const R=6371,p=Math.PI/180,
   x=Math.sin((c-a)*p/2)**2+Math.cos(a*p)*Math.cos(c*p)*Math.sin((d-b)*p/2)**2;
-  return 2*R*Math.asin(Math.sqrt(x)); };
+  return 2*R*Math.asin(Math.sqrt(x));};
+const fmt=n=>n>=1000?(n/1000).toFixed(n>=10000?0:1)+"k":String(n);
 
-function clearOutages(){ Object.values(groups).forEach(g=>map.removeLayer(g)); groups={}; }
+function clearOutages(){Object.values(groups).forEach(g=>map.removeLayer(g));groups={};}
 
-function plot(outages, legendEl, metaEl, label){
+function plot(outages, metaEl, label){
   clearOutages();
-  const counts = {};
-  for (const o of outages){
-    const cls = o.classification; counts[cls]=(counts[cls]||0)+1;
-    if (!groups[cls]) groups[cls] = L.layerGroup().addTo(map);
-    const r = Math.max(4, Math.min(18, 4+Math.sqrt(o.customers||0)));
+  const counts={},custs={};
+  const shown = outages.filter(o=>!activeRegions.size||activeRegions.has(o.region));
+  for (const o of shown){
+    const cls=o.classification; counts[cls]=(counts[cls]||0)+1;
+    custs[cls]=(custs[cls]||0)+(o.customers||0);
+    if(!groups[cls]) groups[cls]=L.layerGroup().addTo(map);
+    const r=Math.max(4,Math.min(18,4+Math.sqrt(o.customers||0)));
+    const age=o.polled_at?` &middot; ${esc(o.polled_at.slice(11,16))}Z`:"";
+    const etr=o.etr?`<br>ETR: ${esc(String(o.etr).replace("T"," ").slice(0,16))}Z`:"";
     L.circleMarker([o.lat,o.lon],{radius:r,weight:1,fillOpacity:.72,
       color:COLORS[cls]||"#9ca3af",fillColor:COLORS[cls]||"#9ca3af"})
       .bindPopup(`<b>${esc(cls)}</b> <span class="badge">${esc(o.region)}</span><br>
-        Customers: ${o.customers} &middot; ${esc((o.polled_at||"").slice(11,16))}Z<br>
+        Customers: ${o.customers}${age}${etr}<br>
         Utility cause: ${esc(o.cause)||"(none)"}<br>
         Crew: ${esc(o.crew_status)||"—"}<br>${esc(o.rationale)}`)
       .addTo(groups[cls]);
   }
-  legendEl.innerHTML = "";
+  const legend=document.getElementById("legend"); legend.innerHTML="";
   for (const cls of Object.keys(COLORS)){
-    if (!(cls in counts)) continue;
-    const row = document.createElement("div"); row.className="row";
-    row.innerHTML = `<span class="dot" style="background:${COLORS[cls]}"></span>
-      <span>${esc(cls)}</span><span class="cnt">${counts[cls]}</span>`;
-    row.onclick = () => { const g=groups[cls];
-      if (map.hasLayer(g)){map.removeLayer(g);row.classList.add("off");}
-      else {map.addLayer(g);row.classList.remove("off");} };
-    legendEl.appendChild(row);
+    if(!(cls in counts)) continue;
+    const row=document.createElement("div"); row.className="row";
+    row.innerHTML=`<span class="dot" style="background:${COLORS[cls]}"></span>
+      <span>${esc(cls)}</span><span class="cnt">${counts[cls]} · ${fmt(custs[cls])} cust</span>`;
+    row.onclick=()=>{const g=groups[cls];
+      if(map.hasLayer(g)){map.removeLayer(g);row.classList.add("off");}
+      else{map.addLayer(g);row.classList.remove("off");}};
+    legend.appendChild(row);
   }
-  if (metaEl) metaEl.textContent = label;
+  if(metaEl) metaEl.textContent=label;
+  // KPI strip
+  document.getElementById("s-out").textContent=shown.length;
+  document.getElementById("s-cust").textContent=fmt(shown.reduce((a,o)=>a+(o.customers||0),0));
+  document.getElementById("s-big").textContent=shown.length?fmt(Math.max(...shown.map(o=>o.customers||0))):"0";
+  document.getElementById("s-reg").textContent=new Set(shown.map(o=>o.region)).size;
+  window._shown=shown;
 }
+
+function regionChips(){
+  const regs=[...new Set((LATEST.outages||[]).map(o=>o.region))].sort();
+  const el=document.getElementById("regchips"); el.innerHTML="";
+  for(const r of regs){
+    const c=document.createElement("span"); c.className="chip on"; c.textContent=r;
+    activeRegions.add(r);
+    c.onclick=()=>{ if(activeRegions.has(r)){activeRegions.delete(r);c.classList.remove("on");}
+      else{activeRegions.add(r);c.classList.add("on");}
+      plot(LATEST.outages||[],document.getElementById("live-meta"),liveLabel()); };
+    el.appendChild(c);
+  }
+}
+const liveLabel=()=>`${LATEST.count} outages · updated ${LATEST.generated_at} UTC`;
 
 function drawDCs(){
   dcLayer.clearLayers();
-  const list = document.getElementById("sitelist"); list.innerHTML="";
-  for (const s of DCS){
-    if (!s.lat) continue;
-    const isCtl = s.status==="control";
-    const col = isCtl ? "#64748b" : "#ef4444";
-    L.circle([s.lat,s.lon],{radius:RADIUS*1000,color:col,weight:1,fillOpacity:.05})
-      .addTo(dcLayer);
-    L.circleMarker([s.lat,s.lon],{radius:5,color:col,fillColor:isCtl?"#334155":"#7f1d1d",
+  const list=document.getElementById("sitelist"); list.innerHTML="";
+  for(const s of DCS){
+    if(!s.lat) continue;
+    const isCtl=s.status==="control", isOp=(s.status||"").startsWith("operating");
+    const col=isCtl?"#64748b":isOp?"#dc8ca6":"#ef4444";
+    if(!isOp) L.circle([s.lat,s.lon],{radius:RADIUS*1000,color:col,weight:1,fillOpacity:.05}).addTo(dcLayer);
+    L.circleMarker([s.lat,s.lon],{radius:5,color:col,fillColor:isCtl?"#334155":isOp?"#6d2438":"#7f1d1d",
       fillOpacity:1,weight:2})
       .bindPopup(`<b>${esc(s.name)}</b><br>${esc(s.operator)} — ${esc(s.status)}<br>
-        <span style="color:#8a90a2">${esc(s.territory)}</span>
-        ${s.verify?'<br><i style="color:#f59e0b">coords approximate</i>':''}`)
+        <span style="color:#8a90a2">${esc(s.territory||"")}</span>
+        ${s.verify?'<br><i style="color:#f59e0b">coords approximate — verify</i>':''}`)
       .addTo(dcLayer);
-    const row = document.createElement("div"); row.className="row";
-    row.style.cursor="pointer";
-    row.innerHTML = `<span class="dot" style="background:${col}"></span>
-      <span>${esc(s.name.length>34?s.name.slice(0,33)+"…":s.name)}</span>
+    const row=document.createElement("div"); row.className="row";
+    row.innerHTML=`<span class="dot" style="background:${col}"></span>
+      <span>${esc(s.name.length>32?s.name.slice(0,31)+"…":s.name)}</span>
       <span class="cnt">${esc(s.status)}</span>`;
-    row.onclick = () => map.setView([s.lat,s.lon], 11);
+    row.onclick=()=>map.setView([s.lat,s.lon],11);
     list.appendChild(row);
   }
 }
-
 function drawAuto(){
   autoLayer.clearLayers();
-  for (const s of AUTO){
-    L.circleMarker([s.lat,s.lon],{radius:3,color:"#64748b",fillColor:"#475569",
-      fillOpacity:.9,weight:1})
-      .bindPopup(`<b>${esc(s.name)}</b><br>${esc(s.operator)||"—"} —
-        ${esc(s.status)}<br><span style="color:#8a90a2">${esc(s.source)}</span>
-        <br><i style="color:#8a90a2">context layer — not in evidence rings</i>`)
-      .addTo(autoLayer);
-  }
-  const list = document.getElementById("sitelist");
-  if (!AUTO.length) return;
-  const row = document.createElement("div"); row.className="row off";
-  row.innerHTML = `<span class="dot" style="background:#475569"></span>
+  for(const s of AUTO) L.circleMarker([s.lat,s.lon],{radius:3,color:"#64748b",
+    fillColor:"#475569",fillOpacity:.9,weight:1})
+    .bindPopup(`<b>${esc(s.name)}</b><br>${esc(s.operator)||"—"} — ${esc(s.status)}
+      <br><span style="color:#8a90a2">${esc(s.source)}</span>`).addTo(autoLayer);
+  if(!AUTO.length) return;
+  const row=document.createElement("div"); row.className="row off";
+  row.innerHTML=`<span class="dot" style="background:#475569"></span>
     <span>OSM-mapped facilities (auto)</span><span class="cnt">${AUTO.length}</span>`;
-  row.onclick = () => {
-    if (map.hasLayer(autoLayer)){map.removeLayer(autoLayer);row.classList.add("off");}
-    else {map.addLayer(autoLayer);row.classList.remove("off");} };
-  list.appendChild(row);
+  row.onclick=()=>{if(map.hasLayer(autoLayer)){map.removeLayer(autoLayer);row.classList.add("off");}
+    else{map.addLayer(autoLayer);row.classList.remove("off");}};
+  document.getElementById("sitelist").appendChild(row);
 }
-
 function drawInfra(){
   infraLayer.clearLayers();
-  for (const p of INFRA){
-    if (!p.lat) continue;
-    const col = p.status==="complete" ? "#fbbf24" : "#f97316";
-    L.circleMarker([p.lat,p.lon],{radius:6,color:col,fillColor:col,
-      fillOpacity:.9,weight:2,className:"infra"})
-      .bindPopup(`<b>⚡ ${esc(p.name)}</b><br>${esc(p.type)} — ${esc(p.status)}
-        <br><span style="color:#8a90a2">${esc(p.territory)}</span>
-        <br><span style="color:#8a90a2;font-size:11px">${esc(p.source)}</span>
-        ${p.verify?'<br><i style="color:#f59e0b">coords approximate</i>':''}`)
-      .addTo(infraLayer);
-  }
-  if (!INFRA.length) return;
-  const list = document.getElementById("sitelist");
-  const row = document.createElement("div"); row.className="row";
-  row.innerHTML = `<span class="dot" style="background:#f97316"></span>
+  for(const p of INFRA){ if(!p.lat) continue;
+    const col=p.status==="complete"?"#fbbf24":"#f97316";
+    L.circleMarker([p.lat,p.lon],{radius:6,color:col,fillColor:col,fillOpacity:.9,weight:2})
+      .bindPopup(`<b>⚡ ${esc(p.name)}</b><br>${esc(p.type)} — ${esc(p.status)}<br>
+        <span style="color:#8a90a2">${esc(p.territory||"")}</span>
+        <br><span style="color:#8a90a2;font-size:11px">${esc(p.source)}</span>`)
+      .addTo(infraLayer);}
+  if(!INFRA.length) return;
+  const row=document.createElement("div"); row.className="row";
+  row.innerHTML=`<span class="dot" style="background:#f97316"></span>
     <span>Grid upgrade projects (⚡)</span><span class="cnt">${INFRA.length}</span>`;
-  row.onclick = () => {
-    if (map.hasLayer(infraLayer)){map.removeLayer(infraLayer);row.classList.add("off");}
-    else {map.addLayer(infraLayer);row.classList.remove("off");} };
-  list.appendChild(row);
+  row.onclick=()=>{if(map.hasLayer(infraLayer)){map.removeLayer(infraLayer);row.classList.add("off");}
+    else{map.addLayer(infraLayer);row.classList.add("on"),row.classList.remove("off");}};
+  document.getElementById("sitelist").appendChild(row);
 }
 
-function dedupe(records){
-  const m = new Map();
-  for (const r of records) m.set(r.region+"|"+r.outage_id, r); // last wins
-  return [...m.values()];
-}
+function dedupe(rs){const m=new Map();for(const r of rs)m.set(r.region+"|"+r.outage_id+"|"+r.lat+","+r.lon,r);return[...m.values()];}
+async function fetchDay(d){const r=await fetch(`data/history/${d}.ndjson`);
+  if(!r.ok)throw new Error("no history for "+d);
+  return (await r.text()).trim().split("\n").filter(Boolean).map(JSON.parse);}
 
-async function fetchDay(date){
-  const r = await fetch(`data/history/${date}.ndjson`);
-  if (!r.ok) throw new Error("no history for "+date);
-  return (await r.text()).trim().split("\n").filter(Boolean).map(JSON.parse);
-}
-
-// ---------- Evidence: recompute ring membership client-side so CONTROL
-// sites participate, independent of server-side flags ----------
 function evidence(records){
-  const uniq = dedupe(records);
-  const ACTIVE = new Set(["construction","contested","announced"]);
-  const real = DCS.filter(s=>s.lat && ACTIVE.has(s.status));
-  const ctls = DCS.filter(s=>s.lat && s.status==="control");
-  const oper = DCS.filter(s=>s.lat && (s.status||"").startsWith("operating"));
+  const uniq=dedupe(records);
+  const ACTIVE=new Set(["construction","contested","announced"]);
+  const real=DCS.filter(s=>s.lat&&ACTIVE.has(s.status));
+  const other=DCS.filter(s=>s.lat&&(s.status==="control"||(s.status||"").startsWith("operating")));
   let nearF=0,nearT=0,farF=0,farT=0;
-  const perSite = new Map(DCS.filter(s=>s.lat).map(s=>[s.name,{status:s.status,f:0,t:0}]));
-  for (const o of uniq){
-    const fair = !o.weather_flag;
-    let inReal=false;
-    for (const s of real) if (hav(o.lat,o.lon,s.lat,s.lon)<=RADIUS){
-      inReal=true; const p=perSite.get(s.name); p.t++; if(fair)p.f++; }
-    for (const s of ctls.concat(oper)) if (hav(o.lat,o.lon,s.lat,s.lon)<=RADIUS){
-      const p=perSite.get(s.name); p.t++; if(fair)p.f++; }
-    if (inReal){ nearT++; if(fair)nearF++; } else { farT++; if(fair)farF++; }
-  }
+  const perSite=new Map(DCS.filter(s=>s.lat).map(s=>[s.name,{status:s.status,f:0,t:0}]));
+  for(const o of uniq){
+    const fair=!o.weather_flag; let inReal=false;
+    for(const s of real) if(hav(o.lat,o.lon,s.lat,s.lon)<=RADIUS){
+      inReal=true;const p=perSite.get(s.name);p.t++;if(fair)p.f++;}
+    for(const s of other) if(hav(o.lat,o.lon,s.lat,s.lon)<=RADIUS){
+      const p=perSite.get(s.name);p.t++;if(fair)p.f++;}
+    if(inReal){nearT++;if(fair)nearF++;}else{farT++;if(fair)farF++;}}
   return {uniq:uniq.length,nearF,nearT,farF,farT,perSite};
 }
-
-function renderEvidence(records, windowLabel){
-  const ev = evidence(records);
-  const pct = (a,b)=> b? (100*a/b).toFixed(1)+"%" : "—";
-  document.getElementById("ev-window").textContent = windowLabel;
-  document.getElementById("kpi-near").textContent = pct(ev.nearF,ev.nearT);
-  document.getElementById("kpi-far").textContent = pct(ev.farF,ev.farT);
-  document.getElementById("kpi-n").textContent = ev.uniq;
-  const rEl = document.getElementById("kpi-ratio");
-  let verdict = "Not enough in-ring outages yet — keep polling.";
-  if (ev.nearT>=5 && ev.farT>=20 && ev.farF>0){
-    const ratio = (ev.nearF/ev.nearT)/(ev.farF/ev.farT);
-    rEl.textContent = ratio.toFixed(2)+"×";
-    rEl.className = "big " + (ratio>1.5?"ratio-hot":ratio>1.1?"ratio-good":"");
-    verdict = ratio>1.5
-      ? "Elevated. Before claiming anything: check CONTROL sites below, then pull PUCO reliability filings + interconnection dockets for the hot sites."
-      : ratio>1.1 ? "Mildly elevated — could easily be noise or corridor effect. Keep accumulating."
-      : "No elevation. That's a finding too: the folk theory isn't showing up in reliability data.";
-  } else rEl.textContent = "—";
-  document.getElementById("ev-verdict").textContent = verdict;
-  const tb = document.querySelector("#sitetable tbody"); tb.innerHTML="";
+async function loadEvidence(windowDays){
+  const days=(INDEX.days||[]).slice(-windowDays);
+  let all=[];
+  for(const d of days){try{all=all.concat(await fetchDay(d.date));}catch(e){}}
+  if(!all.length&&LATEST)all=LATEST.outages||[];
+  const label=days.length?`${days[0].date} → ${days[days.length-1].date}`:"latest only";
+  const ev=evidence(all);
+  const pct=(a,b)=>b?(100*a/b).toFixed(1)+"%":"—";
+  document.getElementById("kpi-near").textContent=pct(ev.nearF,ev.nearT);
+  document.getElementById("kpi-far").textContent=pct(ev.farF,ev.farT);
+  document.getElementById("kpi-n").textContent=ev.uniq;
+  const rEl=document.getElementById("kpi-ratio");
+  let verdict=`Window ${label}. Not enough in-ring outages yet — keep polling.`;
+  rEl.textContent="—"; rEl.className="big";
+  if(ev.nearT>=5&&ev.farT>=20&&ev.farF>0){
+    const ratio=(ev.nearF/ev.nearT)/(ev.farF/ev.farT);
+    rEl.textContent=ratio.toFixed(2)+"×";
+    rEl.className="big "+(ratio>1.5?"ratio-hot":ratio>1.1?"ratio-good":"");
+    verdict=`Window ${label}. `+(ratio>1.5
+      ?"Elevated. Check CONTROL sites, then pull PUCO reliability filings + interconnection dockets for the hot sites."
+      :ratio>1.1?"Mildly elevated — could be noise or corridor effect. Keep accumulating."
+      :"No elevation — the folk theory isn't showing up in reliability data. That's a finding too.");}
+  document.getElementById("ev-verdict").textContent=verdict;
+  const tb=document.querySelector("#sitetable tbody"); tb.innerHTML="";
   [...ev.perSite.entries()].sort((a,b)=>b[1].f-a[1].f).forEach(([name,p])=>{
-    if (!p.t) return;
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${esc(name.length>26?name.slice(0,25)+"…":name)}</td>
+    if(!p.t)return;
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${esc(name.length>26?name.slice(0,25)+"…":name)}</td>
       <td>${esc(p.status)}</td><td class="n">${p.f}</td><td class="n">${p.t}</td>`;
-    tb.appendChild(tr);
-  });
+    tb.appendChild(tr);});
+}
+function timeline(){
+  const el=document.getElementById("tl"); el.innerHTML="";
+  const days=(INDEX.days||[]).slice(-45);
+  if(!days.length){document.getElementById("tl-meta").textContent="no history yet";return;}
+  const mx=Math.max(...days.map(d=>d.unique||d.records||1),1);
+  for(const d of days){
+    const bar=document.createElement("div"); bar.className="bar";
+    const u=d.unique??d.records??0, f=d.fair??0, w=(d.weather??(u-f));
+    const fh=Math.round(60*f/mx), wh=Math.round(60*w/mx);
+    bar.innerHTML=`<div class="f" style="height:${fh}px"></div><div class="w" style="height:${wh}px"></div>`;
+    bar.title=`${d.date}: ${u} unique (${f} fair / ${w} weather)`;
+    bar.onclick=()=>{document.getElementById("daysel").value=d.date;loadHistDay(d.date);};
+    el.appendChild(bar);}
+}
+async function loadHistDay(date){
+  try{
+    const recs=await fetchDay(date), uniq=dedupe(recs);
+    plot(uniq, null, "");
+    document.getElementById("hist-meta").textContent=
+      `${uniq.length} unique outages on ${date} · ${recs.length} observations`;
+    const byHour=Array(24).fill(0);
+    for(const o of uniq)byHour[+(o.polled_at||"").slice(11,13)||0]++;
+    const mx=Math.max(...byHour,1);
+    document.getElementById("spark").innerHTML=
+      byHour.map(n=>`<div style="height:${Math.round(100*n/mx)}%" title="${n}"></div>`).join("");
+  }catch(e){document.getElementById("hist-meta").textContent=e.message;}
 }
 
-// ---------- boot ----------
-let LATEST=null, INDEX=null;
+document.getElementById("csv").onclick=()=>{
+  const rows=window._shown||[];
+  const cols=["polled_at","region","outage_id","lat","lon","customers","cause",
+    "crew_status","etr","wind_kmh","gust_kmh","precip_mm","temp_c","nws_alerts",
+    "dc_name","dc_km","classification","rationale"];
+  const csv=[cols.join(",")].concat(rows.map(r=>cols.map(c=>{
+    let v=r[c]==null?"":String(r[c]); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  }).join(","))).join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download=`gridwatch_${(LATEST.generated_at||"snapshot").slice(0,16)}.csv`; a.click();
+};
+
+document.querySelectorAll("#evwin .chip").forEach(c=>c.onclick=()=>{
+  document.querySelectorAll("#evwin .chip").forEach(x=>x.classList.remove("on"));
+  c.classList.add("on"); loadEvidence(+c.dataset.d);});
+
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active"); currentView=t.dataset.tab;
+  for(const id of["live","history","evidence"])
+    document.getElementById("tab-"+id).style.display=t.dataset.tab===id?"":"none";
+  if(t.dataset.tab==="live"&&LATEST)
+    plot(LATEST.outages||[],document.getElementById("live-meta"),liveLabel());
+});
+
+let nextRefresh=Date.now()+REFRESH_MS;
+setInterval(()=>{
+  const s=Math.max(0,Math.round((nextRefresh-Date.now())/1000));
+  document.getElementById("refresh").textContent=
+    `next refresh ${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+},1000);
+async function refresh(){
+  try{
+    const latest=await fetch("data/latest.json?t="+Date.now()).then(r=>r.json());
+    if(!LATEST||latest.generated_at!==LATEST.generated_at){
+      LATEST=latest;
+      if(currentView==="live")
+        plot(latest.outages||[],document.getElementById("live-meta"),liveLabel());
+    }
+  }catch(e){}
+  nextRefresh=Date.now()+REFRESH_MS;
+  setTimeout(refresh,REFRESH_MS);
+}
+
 async function boot(){
-  const [latest, dcs, auto, infra] = await Promise.all([
+  const [latest,dcs,auto,infra]=await Promise.all([
     fetch("data/latest.json").then(r=>r.json()),
     fetch("data/datacenters.json").then(r=>r.json()).catch(()=>({sites:[]})),
     fetch("data/datacenters_auto.json").then(r=>r.json()).catch(()=>({sites:[]})),
     fetch("data/infrastructure.json").then(r=>r.json()).catch(()=>({projects:[]})),
   ]);
-  LATEST = latest; DCS = dcs.sites||[]; AUTO = auto.sites||[];
-  INFRA = infra.projects||[];
-  RADIUS = latest.dc_radius_km||8;
-  drawDCs(); drawAuto(); drawInfra();
-  plot(latest.outages||[], document.getElementById("legend"),
-       document.getElementById("live-meta"),
-       `${latest.count} outages · updated ${latest.generated_at} UTC · auto-polls every 15 min`);
-  // history index
-  try {
-    INDEX = await fetch("data/history/index.json").then(r=>r.json());
-  } catch(e){ INDEX = {days:[]}; }
-  if (!INDEX.days.length && latest.generated_at && latest.generated_at!=="never")
-    INDEX.days = [{date: latest.generated_at.slice(0,10), records: latest.count}];
-  const sel = document.getElementById("daysel");
-  sel.innerHTML = INDEX.days.slice().reverse().map(d =>
-    `<option value="${d.date}">${d.date} (${d.records} obs)</option>`).join("")
-    || "<option>— no history yet —</option>";
-  // evidence over whole available history (capped at last 30 days)
-  loadEvidence();
+  LATEST=latest;DCS=dcs.sites||[];AUTO=auto.sites||[];INFRA=infra.projects||[];
+  RADIUS=latest.dc_radius_km||8;
+  drawDCs();drawAuto();drawInfra();regionChips();
+  plot(latest.outages||[],document.getElementById("live-meta"),liveLabel());
+  try{INDEX=await fetch("data/history/index.json?t="+Date.now()).then(r=>r.json());}
+  catch(e){INDEX={days:[]};}
+  if(!INDEX.days.length&&latest.generated_at&&latest.generated_at!=="never")
+    INDEX.days=[{date:latest.generated_at.slice(0,10),records:latest.count,
+                 unique:latest.count,fair:0,weather:0}];
+  document.getElementById("daysel").innerHTML=INDEX.days.slice().reverse()
+    .map(d=>`<option value="${d.date}">${d.date} (${d.unique??d.records})</option>`).join("")
+    ||"<option>— none —</option>";
+  document.getElementById("loadday").onclick=()=>loadHistDay(document.getElementById("daysel").value);
+  timeline();
+  loadEvidence(30);
+  setTimeout(refresh,REFRESH_MS);
 }
-
-async function loadEvidence(){
-  const days = (INDEX.days||[]).slice(-30);
-  let all = [];
-  for (const d of days){
-    try { all = all.concat(await fetchDay(d.date)); } catch(e){}
-  }
-  if (!all.length && LATEST) all = LATEST.outages||[];
-  const label = days.length ? `${days[0].date} → ${days[days.length-1].date}` : "latest snapshot only";
-  renderEvidence(all, label);
-}
-
-document.getElementById("loadday").onclick = async () => {
-  const date = document.getElementById("daysel").value;
-  try {
-    const recs = await fetchDay(date);
-    const uniq = dedupe(recs);
-    plot(uniq, document.getElementById("legend"),
-         document.getElementById("hist-meta"),
-         `${uniq.length} unique outages on ${date} (${recs.length} observations)`);
-    document.getElementById("hist-meta").textContent =
-      `${uniq.length} unique outages · ${recs.length} observations across polls`;
-    const byHour = Array(24).fill(0);
-    for (const o of uniq) byHour[+ (o.polled_at||"").slice(11,13) || 0]++;
-    const mx = Math.max(...byHour,1);
-    document.getElementById("spark").innerHTML =
-      byHour.map(n=>`<div style="height:${Math.round(100*n/mx)}%" title="${n}"></div>`).join("");
-  } catch(e){
-    document.getElementById("hist-meta").textContent = e.message;
-  }
-};
-
-document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
-  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-  t.classList.add("active");
-  for (const id of ["live","history","evidence"])
-    document.getElementById("tab-"+id).style.display =
-      t.dataset.tab===id ? "" : "none";
-  if (t.dataset.tab==="live" && LATEST)
-    plot(LATEST.outages||[], document.getElementById("legend"),
-         document.getElementById("live-meta"),
-         `${LATEST.count} outages · updated ${LATEST.generated_at} UTC`);
-});
-
-boot().catch(e => {
-  document.getElementById("live-meta").textContent = "failed to load: "+e;
-});
+boot().catch(e=>{document.getElementById("live-meta").textContent="failed to load: "+e;});
 </script>
 </body>
 </html>

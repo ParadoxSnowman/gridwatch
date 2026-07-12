@@ -619,12 +619,27 @@ class DukeAPI(Kubra):
     API_BASE = "https://prod.apigee.duke-energy.app/outage-maps/v1"
 
     def _headers(self):
-        return {
+        """Duke's Apigee gateway REQUIRES Basic auth — a bare call fails with
+        'Unresolved variable : request.header.Authorization'. The token is a
+        static consumer key:secret pair baked into their public JS bundle and
+        sent by their own map. It's their credential, so we read it from the
+        environment (GitHub Actions secret DUKE_BASIC_TOKEN) rather than
+        committing it. Fallback: region['basic_token'] or a config_url the
+        keys can be harvested from."""
+        h = {
             "Accept": "application/json, text/plain, */*",
             "Origin": "https://outagemap.duke-energy.com",
             "Referer": "https://outagemap.duke-energy.com/",
             "User-Agent": IFactor.BROWSER_UA,
         }
+        token = (os.environ.get("DUKE_BASIC_TOKEN")
+                 or self.region.get("basic_token"))
+        if token:
+            token = token.strip()
+            if not token.lower().startswith("basic "):
+                token = f"Basic {token}"
+            h["Authorization"] = token
+        return h
 
     def _basic_auth_retry(self, url):
         """Only used if the plain call is rejected AND a config_url is set."""
@@ -685,7 +700,12 @@ class DukeAPI(Kubra):
         self.s.headers.update(self._headers())
         try:
             r = self.s.get(url, timeout=30)
-            if r.status_code in (401, 403):
+            if r.status_code in (400, 401, 403):
+                if "Authorization" not in self.s.headers:
+                    print(f"[!] [{name}] {r.status_code}: Duke requires Basic "
+                          f"auth and no token is set. Add repo secret "
+                          f"DUKE_BASIC_TOKEN (the 'Basic ...' value their map "
+                          f"sends) and expose it as an env var in the workflow.")
                 print(f"[!] [{name}] outages endpoint returned "
                       f"{r.status_code}; trying config-based auth")
                 r2 = self._basic_auth_retry(url)

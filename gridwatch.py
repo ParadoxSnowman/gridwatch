@@ -293,23 +293,52 @@ class Kubra:
         except (requests.RequestException, ValueError):
             return None
 
+    def _layer_candidates(self):
+        """Kubra views can each use a different cluster layer number. Try the
+        configured/remembered one first, then sweep the rest."""
+        first = (self.region.get("kubra_layer")
+                 or self.cfg.get("kubra_layer", "cluster-5"))
+        rest = [f"cluster-{i}" for i in range(1, 8) if f"cluster-{i}" != first]
+        return [first] + rest
+
     def fetch_outages(self):
-        """Descend the quadkey pyramid. KUBRA item ids are only unique WITHIN
-        a tile (e.g. '8-0'), so records are keyed by id+coords. Cluster
-        markers are drilled into until they resolve to individual incidents
-        (or zoom_max); a cluster is only kept if its children never resolved,
-        so nothing is double-counted."""
         ctx = self._prepare()
+        if "layer" not in ctx:            # non-layered providers (ifactor)
+            incidents, answered = self._descend(ctx)
+            return self._finish(incidents)
+        for i, layer in enumerate(self._layer_candidates()):
+            ctx["layer"] = layer
+            incidents, answered = self._descend(ctx)
+            if answered:
+                if i > 0:
+                    print(f"[i] [{self.region['name']}] layer auto-detected: "
+                          f"{layer} (remember it: set 'kubra_layer': "
+                          f"'{layer}' on this region in gridwatch_config.json)")
+                    self.region["kubra_layer"] = layer
+                return self._finish(incidents)
+        print(f"[i] [{self.region['name']}] no tiles on any layer — region "
+              f"is quiet (0 outages) across all cluster layers.")
+        return self._finish({})
+
+    def _finish(self, incidents):
+        for o in incidents.values():
+            o["region"] = self.region["name"]
+        return list(incidents.values())
+
+    def _descend(self, ctx):
+        """One full quadkey descent. Returns (incidents dict, any_tile_ever).
+        any_tile_ever=False means every request 404'd: either the region is
+        quiet or this layer name is wrong for the view."""
         cfg = self.cfg
         bbox = self.region.get("bbox") or cfg["bbox"]
-        incidents = {}          # key -> record (non-cluster, authoritative)
-        pending_clusters = {}   # qk -> [cluster records] kept only if unresolved
-        answered_qks = set()    # every tile that returned a payload
+        incidents = {}
+        pending_clusters = {}
+        answered_qks = set()
+        any_ever = False
 
         def key(rec):
             return f"{rec['outage_id']}@{rec['lat']:.4f},{rec['lon']:.4f}"
 
-        # find the top of the tile pyramid
         zoom = cfg["zoom_min"]
         frontier = quadkeys_for_bbox(bbox, zoom)
         tiles_requested, budget = 0, cfg.get("max_tiles_per_region", 4000)
@@ -328,7 +357,7 @@ class Kubra:
             for qk, payload in zip(frontier, payloads):
                 if payload is None:
                     continue
-                any_tile = True
+                any_tile = any_ever = True
                 answered_qks.add(qk)
                 tile_clusters = []
                 for item in payload.get("file_data", []):
@@ -344,44 +373,31 @@ class Kubra:
                 if tile_clusters:
                     pending_clusters[qk] = tile_clusters
                     next_frontier.extend(qk + d for d in "0123")
-                    # children resolved anything under this tile; drop parents
-                    # of deeper pending clusters once children respond
-            print(f"[i] zoom {zoom}: {len(frontier)} tiles, "
-                  f"{n_inc} incidents, {n_clu} clusters pending "
-                  f"({len(incidents)} unique incidents so far)")
+            print(f"[i] [{self.region['name']}] zoom {zoom}: "
+                  f"{len(frontier)} tiles, {n_inc} incidents, "
+                  f"{n_clu} clusters pending "
+                  f"({len(incidents)} unique so far)")
             if not any_tile and not incidents and not pending_clusters:
                 if zoom < cfg.get("widen_max_zoom", 10):
                     next_frontier = quadkeys_for_bbox(bbox, zoom + 1)
-                    print(f"[i] [{self.region['name']}] no tiles at zoom "
-                          f"{zoom}; widening to {zoom+1}")
                 else:
-                    print(f"[i] [{self.region['name']}] no tiles through "
-                          f"zoom {zoom} — region is quiet (0 outages).")
                     break
             frontier, zoom = next_frontier, zoom + 1
             if not frontier:
                 break
 
-        # A cluster's contents are re-emitted by whichever of its child
-        # tiles exist. If NONE of its 4 children answered, the pyramid ends
-        # here and the cluster is a leaf — keep it or lose its customers.
-        kept_clusters = 0
+        # keep clusters whose children never answered (pyramid leaves)
+        kept = 0
         for qk, recs in pending_clusters.items():
             if any((qk + d) in answered_qks for d in "0123"):
-                continue  # superseded by deeper data
+                continue
             for rec in recs:
                 incidents[key(rec)] = rec
-                kept_clusters += 1
-        if kept_clusters:
-            print(f"[i] kept {kept_clusters} unresolved cluster markers")
-        if not incidents:
-            print("[!] Zero outages parsed. If the FE map visibly shows "
-                  "outages right now, the layer name may differ — grab a "
-                  "tile URL from DevTools (filter 'cluster') and set "
-                  "'kubra_layer' in gridwatch_config.json to match.")
-        for o in incidents.values():
-            o["region"] = self.region["name"]
-        return list(incidents.values())
+                kept += 1
+        if kept:
+            print(f"[i] [{self.region['name']}] kept {kept} unresolved "
+                  f"cluster markers")
+        return incidents, any_ever
 
     @staticmethod
     def _parse_item(item):

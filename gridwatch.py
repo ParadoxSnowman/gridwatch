@@ -551,12 +551,51 @@ class DukeAPI(Kubra):
         return out
 
 
+class AESXml(Kubra):
+    """AES Ohio (Dayton) legacy DP&L OMS feed: a single XML document at
+    /DATA/DPLOMSDATA.xml with <Markers> point incidents. No auth."""
+
+    def fetch_outages(self):
+        import xml.etree.ElementTree as ET
+        url = self.region["url"]
+        self.s.headers["User-Agent"] = IFactor.BROWSER_UA
+        r = self.s.get(url, timeout=30)
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
+        bbox = self.region.get("bbox") or {}
+        out = []
+        for m in root.findall("Markers"):
+            def g(tag):
+                el = m.find(tag)
+                return el.text.strip() if el is not None and el.text else ""
+            try:
+                lat, lon = float(g("LAT")), float(g("LNG"))
+            except ValueError:
+                continue
+            if bbox and not (bbox["south"] <= lat <= bbox["north"]
+                             and bbox["west"] <= lon <= bbox["east"]):
+                continue
+            cust = g("TOTALCUSTS")
+            out.append({"outage_id": g("INCIDENTID") or f"{lat},{lon}",
+                        "lat": round(lat, 5), "lon": round(lon, 5),
+                        "customers": int(cust) if cust.isdigit() else 0,
+                        "cause": "",
+                        "crew_status": g("COUNTY").title(),
+                        "etr": g("EstimateTime"),
+                        "cluster": False,
+                        "region": self.region["name"]})
+        print(f"[i] [{self.region['name']}] aes xml: {len(out)} incidents")
+        return out
+
+
 def make_provider(cfg, region):
     p = region.get("provider", "kubra")
     if p == "ifactor":
         return IFactor(cfg, region=region)
     if p == "duke":
         return DukeAPI(cfg, region=region)
+    if p == "aesxml":
+        return AESXml(cfg, region=region)
     return Kubra(cfg, region=region)
 
 
@@ -918,6 +957,8 @@ def _region_ready(r):
         return bool(r.get("base"))
     if p == "duke":
         return True
+    if p == "aesxml":
+        return bool(r.get("url"))
     return bool(r.get("instance_id") and r.get("view_id"))
 
 

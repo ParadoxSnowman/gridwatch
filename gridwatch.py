@@ -517,72 +517,156 @@ class IFactor(Kubra):
 
 
 class DukeAPI(Kubra):
-    """Duke Energy outage-maps API (jurisdiction DEM = Ohio/Kentucky).
-    Not tile-based: their map config publicly serves consumer keys; a Basic
-    token built from them authorizes the point-outage endpoint. Credit:
-    GateHouseMedia/power-outages + Thomas Wilburn for the auth discovery."""
+    """Duke Energy outage-maps REST API (jurisdiction DEM = Ohio/Kentucky).
 
-    CONFIG_URL = "https://outagemap.duke-energy.com/config/config.prod.json"
-    OUTAGES_URL = "https://cust-api.duke-energy.com/outage-maps/v1/outages"
+    Discovered from a live browser session on
+    outagemap.duke-energy.com/#/current-outages/ohky: the SPA calls an Apigee
+    gateway directly, with no KUBRA storm center and no tile pyramid:
 
-    def fetch_outages(self):
-        import base64
-        self.s.headers.update({
+        GET https://prod.apigee.duke-energy.app/outage-maps/v1/outages
+            ?jurisdiction=DEM
+
+    Sibling endpoints seen in the same session (unused, but documented):
+        /outage-maps/v1/jurisdictions/DEM
+        /outage-maps/v1/counties?jurisdiction=DEM
+        /outage-maps/v1/alerts?jurisdiction=DEM
+        /outage-maps/v1/mapsettings?jurisdiction=DEM
+
+    No auth request appeared in the capture, so we call it plainly with
+    browser-ish headers. If the gateway ever answers 401/403, set
+    'config_url' on the region and we'll harvest consumer keys from it and
+    retry with Basic auth (the older cust-api pattern).
+    """
+
+    API_BASE = "https://prod.apigee.duke-energy.app/outage-maps/v1"
+
+    def _headers(self):
+        return {
             "Accept": "application/json, text/plain, */*",
             "Origin": "https://outagemap.duke-energy.com",
             "Referer": "https://outagemap.duke-energy.com/",
             "User-Agent": IFactor.BROWSER_UA,
-        })
-        r = self.s.get(self.CONFIG_URL, timeout=30)
-        r.raise_for_status()
-        cj = r.json()
-        token = base64.b64encode(
-            f"{cj['consumer_key_emp']}:{cj['consumer_secret_emp']}".encode()
-        ).decode()
-        self.s.headers["Authorization"] = f"Basic {token}"
+        }
+
+    def _basic_auth_retry(self, url):
+        """Only used if the plain call is rejected AND a config_url is set."""
+        import base64
+        cfg_url = self.region.get("config_url")
+        if not cfg_url:
+            return None
+        try:
+            c = self.s.get(cfg_url, timeout=30)
+            c.raise_for_status()
+            cj = c.json()
+            key = cj.get("consumer_key_emp") or cj.get("consumer_key")
+            sec = cj.get("consumer_secret_emp") or cj.get("consumer_secret")
+            if not (key and sec):
+                print(f"[!] [{self.region['name']}] config_url had no consumer keys")
+                return None
+            tok = base64.b64encode(f"{key}:{sec}".encode()).decode()
+            r = self.s.get(url, timeout=30,
+                           headers={**self._headers(),
+                                    "Authorization": f"Basic {tok}"})
+            r.raise_for_status()
+            print(f"[i] [{self.region['name']}] authorized via Basic token")
+            return r
+        except requests.RequestException as e:
+            print(f"[!] [{self.region['name']}] basic-auth retry failed: {e}")
+            return None
+
+    @staticmethod
+    def _pick(d, *names):
+        for n in names:
+            v = d.get(n)
+            if v not in (None, ""):
+                return v
+        return None
+
+    def _coords(self, ev):
+        """Duke has used several coordinate shapes; accept the known ones."""
+        lat = self._pick(ev, "deviceLatitudeLocation", "latitude", "lat")
+        lon = self._pick(ev, "deviceLongitudeLocation", "longitude", "lon", "lng")
+        if lat is None or lon is None:
+            geom = ev.get("geometry") or ev.get("location") or {}
+            if isinstance(geom, dict):
+                coords = geom.get("coordinates")
+                if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                    lon, lat = coords[0], coords[1]   # GeoJSON order
+                else:
+                    lat = lat if lat is not None else geom.get("lat")
+                    lon = lon if lon is not None else geom.get("lng") or geom.get("lon")
+        try:
+            return float(lat), float(lon)
+        except (TypeError, ValueError):
+            return None, None
+
+    def fetch_outages(self):
+        name = self.region["name"]
         juris = self.region.get("jurisdiction", "DEM")
-        rr = self.s.get(f"{self.OUTAGES_URL}?jurisdiction={juris}",
-                        cookies=r.cookies, timeout=30)
-        rr.raise_for_status()
-        data = rr.json().get("data", [])
-        print(f"[i] [{self.region['name']}] duke api: {len(data)} raw events "
+        url = f"{self.API_BASE}/outages?jurisdiction={juris}"
+        self.s.headers.update(self._headers())
+        try:
+            r = self.s.get(url, timeout=30)
+            if r.status_code in (401, 403):
+                print(f"[!] [{name}] outages endpoint returned "
+                      f"{r.status_code}; trying config-based auth")
+                r2 = self._basic_auth_retry(url)
+                if r2 is None:
+                    raise RuntimeError(
+                        f"{r.status_code} from Duke API (no usable auth). If "
+                        f"this is a datacenter-IP block, poll Duke from a "
+                        f"residential IP and push results.")
+                r = r2
+            else:
+                r.raise_for_status()
+        except requests.RequestException as e:
+            raise RuntimeError(f"Duke request failed: {e}")
+
+        payload = r.json()
+        data = payload.get("data", payload if isinstance(payload, list) else [])
+        if isinstance(data, dict):
+            data = data.get("outages") or data.get("events") or []
+        print(f"[i] [{name}] duke api: {len(data)} raw records "
               f"(jurisdiction {juris})")
 
-        def pick(d, *names, default=None):
-            for n in names:
-                if n in d and d[n] is not None:
-                    return d[n]
-            return default
-
         bbox = self.region.get("bbox") or {}
-        out = []
+        out, skipped, sample_printed = [], 0, False
         for i, ev in enumerate(data):
-            lat = pick(ev, "deviceLatitudeLocation", "latitude", "lat")
-            lon = pick(ev, "deviceLongitudeLocation", "longitude", "lon", "lng")
-            if lat is None or lon is None:
-                if i == 0:
-                    print(f"[!] duke schema sample (no coords found): "
-                          f"{json.dumps(ev)[:400]}")
+            if not isinstance(ev, dict):
                 continue
-            lat, lon = float(lat), float(lon)
+            lat, lon = self._coords(ev)
+            if lat is None:
+                skipped += 1
+                if not sample_printed:
+                    print(f"[!] [{name}] no coords in record; keys="
+                          f"{sorted(ev.keys())[:14]}")
+                    sample_printed = True
+                continue
             if bbox and not (bbox["south"] <= lat <= bbox["north"]
                              and bbox["west"] <= lon <= bbox["east"]):
                 continue
-            cust = pick(ev, "customersAffectedNumber", "customersAffected",
-                        "custAffected", default=0)
-            cause = pick(ev, "outageCause", "convertedOutageCauseCode",
-                         "cause", default="")
-            etr = pick(ev, "estimatedRestorationTime", "etr",
-                       "etrOverride", default="")
-            oid = pick(ev, "sourceEventNumber", "eventNumber", "outageId",
-                       default=f"{i}")
-            out.append({"outage_id": str(oid), "lat": round(lat, 5),
-                        "lon": round(lon, 5),
-                        "customers": int(cust) if cust else 0,
-                        "cause": str(cause), "crew_status": str(
-                            pick(ev, "crewStatus", "deviceStatus", default="")),
-                        "etr": str(etr), "cluster": False,
-                        "region": self.region["name"]})
+            cust = self._pick(ev, "customersAffectedNumber",
+                              "customersAffected", "custAffected") or 0
+            if isinstance(cust, dict):
+                cust = cust.get("value") or cust.get("val") or 0
+            out.append({
+                "outage_id": str(self._pick(ev, "sourceEventNumber",
+                                            "eventNumber", "outageId",
+                                            "id") or f"duke-{i}"),
+                "lat": round(lat, 5), "lon": round(lon, 5),
+                "customers": int(cust) if str(cust).isdigit() else 0,
+                "cause": str(self._pick(ev, "outageCause",
+                                        "convertedOutageCauseCode",
+                                        "cause") or ""),
+                "crew_status": str(self._pick(ev, "crewStatus", "deviceStatus",
+                                              "status") or ""),
+                "etr": str(self._pick(ev, "estimatedRestorationTime",
+                                      "etr", "etrOverride") or ""),
+                "cluster": False,
+                "region": name,
+            })
+        print(f"[i] [{name}] parsed outages: {len(out)}"
+              + (f" ({skipped} unparseable)" if skipped else ""))
         return out
 
 
@@ -1382,10 +1466,52 @@ def cmd_report(cfg, days=30):
     conn.close()
 
 
+def cmd_verify(cfg, region_filter=None):
+    """Diagnostics: exercise each configured feed, report reachability,
+    record counts, and parser success. Writes verify_report.json."""
+    regions = _regions(cfg)
+    if region_filter:
+        regions = [r for r in regions if r["name"] in region_filter]
+    report = {"checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+              "regions": {}}
+    for region in regions:
+        name = region["name"]
+        entry = {"provider": region.get("provider", "kubra"), "ok": False}
+        t0 = time.time()
+        try:
+            prov = make_provider(cfg, region)
+            outs = prov.fetch_outages()
+            entry["ok"] = True
+            entry["outages"] = len(outs)
+            entry["customers"] = sum(o.get("customers") or 0 for o in outs)
+            entry["with_coords"] = sum(1 for o in outs if o.get("lat"))
+            entry["with_cause"] = sum(1 for o in outs if o.get("cause"))
+            entry["with_etr"] = sum(1 for o in outs if o.get("etr"))
+            entry["sample"] = outs[0] if outs else None
+            if region.get("kubra_layer"):
+                entry["kubra_layer"] = region["kubra_layer"]
+        except Exception as e:
+            entry["error"] = f"{type(e).__name__}: {e}"
+        entry["seconds"] = round(time.time() - t0, 1)
+        report["regions"][name] = entry
+        status = "OK " if entry["ok"] else "FAIL"
+        detail = (f"{entry.get('outages', 0)} outages, "
+                  f"{entry.get('customers', 0)} customers"
+                  if entry["ok"] else entry.get("error", "")[:90])
+        print(f"[{status}] {name:8s} {entry['seconds']:5.1f}s  {detail}")
+    path = os.path.join(BASE_DIR, "verify_report.json")
+    with open(path, "w") as f:
+        json.dump(report, f, indent=2)
+    print(f"\n[i] report written: {path}")
+    ok = sum(1 for e in report["regions"].values() if e["ok"])
+    print(f"[i] {ok}/{len(report['regions'])} feeds healthy")
+
+
 def main():
     ap = argparse.ArgumentParser(description="FirstEnergy OH outage/weather/DC correlator")
     ap.add_argument("command",
-                    choices=["poll", "map", "report", "discover", "osint"])
+                    choices=["poll", "map", "report", "discover", "osint",
+                             "verify"])
     ap.add_argument("--days", type=int, default=30, help="report window (days)")
     ap.add_argument("--emit", metavar="DIR", default=None,
                     help="also write latest.json + NDJSON history to DIR "
@@ -1396,6 +1522,7 @@ def main():
     cfg = load_config()
     {"poll": lambda c: cmd_poll(c, emit_dir=args.emit, no_db=args.no_db),
      "map": cmd_map, "discover": cmd_discover,
+     "verify": lambda c: cmd_verify(c),
      "osint": lambda c: fetch_auto_datacenters(
          c, os.path.join(args.emit or "docs/data", "datacenters_auto.json")),
      "report": lambda c: cmd_report(c, args.days)}[args.command](cfg)

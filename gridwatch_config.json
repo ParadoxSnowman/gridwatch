@@ -1,5 +1,5 @@
 {
-  "_help": "Each FE state view has its OWN dataset (different generation GUID in currentState) — one region per view. The post-resolve bbox filter clips border-tile overlap.",
+  "_help": "Each FE state view uses its OWN cluster layer number (OH=5, PA=6, NJ=7, MD-WV=4) and its own currentState generation. Pinning the wrong layer silently 404s every tile — if a state ever goes blank, delete its kubra_layer line to force auto-detect and re-pin what the log prints.",
   "regions": [
     {"name": "OH",
      "entry": "https://outages-oh.firstenergycorp.com/",
@@ -20,12 +20,15 @@
      "entry": "https://outages-nj.firstenergycorp.com/",
      "instance_id": "6c715f0e-bbec-465f-98cc-0b81623744be",
      "view_id": "fcd7c23d-de37-4471-8ca3-37c3260f94fa",
+     "kubra_layer": "cluster-7",
      "bbox": {"west": -75.7, "south": 38.8, "east": -73.8, "north": 41.4}},
 
     {"name": "MD-WV",
      "entry": "https://outages-mdwv.firstenergycorp.com/",
      "instance_id": "6c715f0e-bbec-465f-98cc-0b81623744be",
      "view_id": "5ed3ddf1-3a6f-4cfd-8957-eba54b5baaad",
+     "kubra_layer": "cluster-4",
+     "max_tiles": 30000,
      "bbox": {"west": -82.7, "south": 37.1, "east": -77.0, "north": 40.7}},
 
     {"name": "OH-AEP", "provider": "ifactor",

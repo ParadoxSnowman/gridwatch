@@ -1,10 +1,9 @@
 {
   "_notes": [
-    "Data center sites in FirstEnergy territory across OH/PA/NJ/MD/WV.",
-    "verify:true = coordinates are TOWN/AREA-LEVEL APPROXIMATE. Pull actual parcels from county GIS before treating proximity distances as precise. The 8km ring absorbs town-level error, but fix them anyway.",
-    "status: operating | construction | announced | contested (moratorium/litigation/paused)",
-    "Sourcing trail per site is in 'source'. Ongoing additions: PUCO/PaPUC large-load dockets, FE investor decks, county commissioner minutes, stopohiodatacenters.org tracker, datacentermap.com, cleanview.co.",
-    "CONTROL- prefixed sites are for the confounder test: exurban growth corridors WITHOUT data centers. Add 3-4 of your own; matched on county type."
+    "coverage=polled  -> the site sits in a utility whose outage feed we scrape; it can be tested.",
+    "coverage=context-only -> we plot it, but its outages never appear in our data (different utility).",
+    "status=control -> matched growth corridor with NO data center. If controls run as hot as real sites, the signal is 'construction corridor', not 'data center'.",
+    "verify=true -> coordinates are town/parcel-approximate. Pull the real parcel from county GIS before trusting proximity distances."
   ],
   "sites": [
     {
@@ -15,7 +14,8 @@
       "status": "construction",
       "territory": "Ohio Edison",
       "verify": true,
-      "source": "Foxconn->SoftBank sale announced Aug 2025 ($375M, $3B planned investment); Stargate AI data center photographed under construction Oct 2025 (Bloomberg). Former Lordstown Assembly, 6.2M sqft."
+      "source": "Foxconn->SoftBank sale announced Aug 2025 ($375M, $3B planned investment); Stargate AI data center photographed under construction Oct 2025 (Bloomberg). Former Lordstown Assembly, 6.2M sqft.",
+      "coverage": "polled"
     },
     {
       "name": "Bristolville 25 - Lordstown 133-acre campus",
@@ -25,7 +25,8 @@
       "status": "contested",
       "territory": "Ohio Edison",
       "verify": true,
-      "source": "$3.6B, 1.65M sqft on 133 acres near former GM site. Village moratorium expires July 4 2026; developer mandamus pending at Ohio Supreme Court; Sept 2026 construction target per filings."
+      "source": "$3.6B, 1.65M sqft on 133 acres near former GM site. Village moratorium expires July 4 2026; developer mandamus pending at Ohio Supreme Court; Sept 2026 construction target per filings.",
+      "coverage": "polled"
     },
     {
       "name": "Meta Bowling Green",
@@ -35,7 +36,8 @@
       "status": "construction",
       "territory": "Toledo Edison",
       "verify": true,
-      "source": "Announced April 2025; FE Q1 2025 investor materials place it in Toledo Edison territory."
+      "source": "Announced April 2025; FE Q1 2025 investor materials place it in Toledo Edison territory.",
+      "coverage": "polled"
     },
     {
       "name": "Perry Township (Stark Co.) 100-acre project",
@@ -45,7 +47,8 @@
       "status": "contested",
       "territory": "Ohio Edison",
       "verify": true,
-      "source": "100 acres farmland; paused pending Ohio EPA / utility conditions (Ideastream, Feb 2026)."
+      "source": "100 acres farmland; paused pending Ohio EPA / utility conditions (Ideastream, Feb 2026).",
+      "coverage": "polled"
     },
     {
       "name": "Ravenna proposed site (Portage Co.)",
@@ -55,7 +58,8 @@
       "status": "contested",
       "territory": "Ohio Edison",
       "verify": true,
-      "source": "Proposed across from UH Portage Medical Center; city passed 1-year moratorium April 20 2026."
+      "source": "Proposed across from UH Portage Medical Center; city passed 1-year moratorium April 20 2026.",
+      "coverage": "polled"
     },
     {
       "name": "Homer City Energy Campus",
@@ -65,7 +69,8 @@
       "status": "construction",
       "territory": "Penelec",
       "verify": true,
-      "source": "3,200-acre former coal plant; up to 4.5GW on-site gas; interconnects with FirstEnergy PA (Penelec) per Utility Dive Apr 2025; power production targeted 2027; PA DEP air permit Nov 2025. NOTE: largely self-powered - distribution impact is construction-phase + interconnection work."
+      "source": "3,200-acre former coal plant; up to 4.5GW on-site gas; interconnects with FirstEnergy PA (Penelec) per Utility Dive Apr 2025; power production targeted 2027; PA DEP air permit Nov 2025. NOTE: largely self-powered - distribution impact is construction-phase + interconnection work.",
+      "coverage": "polled"
     },
     {
       "name": "Upper Burrell project (Westmoreland Co.)",
@@ -75,17 +80,8 @@
       "status": "announced",
       "territory": "West Penn Power",
       "verify": true,
-      "source": "One of five western-PA gas-powered DC projects (TribLive, Mar 2026). Confirm territory + parcel."
-    },
-    {
-      "name": "CONTROL - add exurban growth corridor w/o DC",
-      "operator": "n/a",
-      "lat": 0.0,
-      "lon": 0.0,
-      "status": "control",
-      "territory": "?",
-      "verify": true,
-      "source": "Placeholder: pick 3-4 growth corridors with active construction but NO data center, matched by county type. This is your confounder test. Delete or fill."
+      "source": "One of five western-PA gas-powered DC projects (TribLive, Mar 2026). Confirm territory + parcel.",
+      "coverage": "polled"
     },
     {
       "name": "H5 Cleveland Technology Center",
@@ -95,7 +91,8 @@
       "status": "operating",
       "territory": "Illuminating Co.",
       "verify": true,
-      "source": "1625 Rockwell Ave; 351k sqft, 10MW, carrier hotel"
+      "source": "1625 Rockwell Ave; 351k sqft, 10MW, carrier hotel",
+      "coverage": "polled"
     },
     {
       "name": "DataBank CLE1",
@@ -105,7 +102,8 @@
       "status": "operating",
       "territory": "Illuminating Co.",
       "verify": true,
-      "source": "1255 Euclid Ave; 7.4k sqft raised floor, 0.4MW"
+      "source": "1255 Euclid Ave; 7.4k sqft raised floor, 0.4MW",
+      "coverage": "polled"
     },
     {
       "name": "Expedient NEO (Garfield Heights)",
@@ -115,7 +113,8 @@
       "status": "operating",
       "territory": "Illuminating Co.",
       "verify": true,
-      "source": "15166 + 15248 Neo Pkwy; ~2.7MW + 2MW"
+      "source": "15166 + 15248 Neo Pkwy; ~2.7MW + 2MW",
+      "coverage": "polled"
     },
     {
       "name": "Expedient Independence",
@@ -125,7 +124,8 @@
       "status": "operating",
       "territory": "Illuminating Co.",
       "verify": true,
-      "source": "7500 E Pleasant Valley Rd; 37k sqft, 2MW"
+      "source": "7500 E Pleasant Valley Rd; 37k sqft, 2MW",
+      "coverage": "polled"
     },
     {
       "name": "Involta/colo Akron (120 N Broadway)",
@@ -135,7 +135,8 @@
       "status": "operating",
       "territory": "Ohio Edison",
       "verify": true,
-      "source": "120 N Broadway St, Akron; verify operator via datacentermap"
+      "source": "120 N Broadway St, Akron; verify operator via datacentermap",
+      "coverage": "polled"
     },
     {
       "name": "Shippingport / Bruce Mansfield redevelopment (Beaver Co.)",
@@ -145,7 +146,8 @@
       "status": "announced",
       "territory": "Penn Power (verify - Duquesne border area)",
       "verify": true,
-      "source": "One of five western-PA gas-powered DC projects (TribLive roundup, Mar 2026). Former Bruce Mansfield coal plant site. Confirm developer + territory via Beaver Co. records."
+      "source": "One of five western-PA gas-powered DC projects (TribLive roundup, Mar 2026). Former Bruce Mansfield coal plant site. Confirm developer + territory via Beaver Co. records.",
+      "coverage": "polled"
     },
     {
       "name": "Springdale / former Cheswick plant site (Allegheny Co.)",
@@ -155,7 +157,8 @@
       "status": "announced",
       "territory": "Duquesne Light (NOT FirstEnergy - context site)",
       "verify": true,
-      "source": "Western-PA gas-powered DC project roundup (TribLive, Mar 2026). Duquesne territory means its outages won't appear on FE's PA map; site kept for corridor context."
+      "source": "Western-PA gas-powered DC project roundup (TribLive, Mar 2026). Duquesne territory means its outages won't appear on FE's PA map; site kept for corridor context.",
+      "coverage": "context-only (utility not polled)"
     },
     {
       "name": "Meta New Albany campus",
@@ -165,7 +168,8 @@
       "status": "construction",
       "territory": "AEP Ohio (Columbus alley)",
       "verify": true,
-      "source": "Operating since 2022 with continuous multi-building expansion phases underway; parcel via Licking/Franklin Co GIS"
+      "source": "Operating since 2022 with continuous multi-building expansion phases underway; parcel via Licking/Franklin Co GIS",
+      "coverage": "polled"
     },
     {
       "name": "AWS New Albany / Jug Street corridor",
@@ -175,7 +179,8 @@
       "status": "construction",
       "territory": "AEP Ohio (Columbus alley)",
       "verify": true,
-      "source": "Part of AWS's multibillion-dollar central-Ohio expansion; multiple parcels \u2014 treat as corridor anchor, refine per-building from county GIS"
+      "source": "Part of AWS's multibillion-dollar central-Ohio expansion; multiple parcels \u2014 treat as corridor anchor, refine per-building from county GIS",
+      "coverage": "polled"
     },
     {
       "name": "Google New Albany",
@@ -185,7 +190,8 @@
       "status": "construction",
       "territory": "AEP Ohio (Columbus alley)",
       "verify": true,
-      "source": "Announced 2023-2024 New Albany build alongside existing Columbus/Lancaster sites; verify parcel"
+      "source": "Announced 2023-2024 New Albany build alongside existing Columbus/Lancaster sites; verify parcel",
+      "coverage": "polled"
     },
     {
       "name": "Microsoft Licking Co. sites (New Albany/Heath/Hebron)",
@@ -195,7 +201,8 @@
       "status": "contested",
       "territory": "AEP Ohio (Columbus alley)",
       "verify": true,
-      "source": "Three-site $4.2B plan announced 2023; construction PAUSED on Licking Co. sites announced 2025 \u2014 status contested/paused is analytically interesting: watch for outage-rate change at pause"
+      "source": "Three-site $4.2B plan announced 2023; construction PAUSED on Licking Co. sites announced 2025 \u2014 status contested/paused is analytically interesting: watch for outage-rate change at pause",
+      "coverage": "polled"
     },
     {
       "name": "QTS New Albany campus",
@@ -205,7 +212,8 @@
       "status": "construction",
       "territory": "AEP Ohio (Columbus alley)",
       "verify": true,
-      "source": "Large multi-building campus in the International Business Park; verify parcel via New Albany planning docs"
+      "source": "Large multi-building campus in the International Business Park; verify parcel via New Albany planning docs",
+      "coverage": "polled"
     },
     {
       "name": "AWS Salem Twp (Susquehanna nuclear campus, Luzerne Co.)",
@@ -215,7 +223,8 @@
       "status": "construction",
       "territory": "PPL \u2014 NOT FirstEnergy (context site)",
       "verify": true,
-      "source": "Anchor of Amazon's $20B PA commitment (Shapiro, Jun 2025). AWS bought Talen's DC + ~1,200 acres; 15 buildings planned. NOTE: co-located at Susquehanna Steam Electric Station; PPL territory, so its outages will NOT appear on the FE map. Kept as corridor context."
+      "source": "Anchor of Amazon's $20B PA commitment (Shapiro, Jun 2025). AWS bought Talen's DC + ~1,200 acres; 15 buildings planned. NOTE: co-located at Susquehanna Steam Electric Station; PPL territory, so its outages will NOT appear on the FE map. Kept as corridor context.",
+      "coverage": "context-only (utility not polled)"
     },
     {
       "name": "AWS Falls Twp / Keystone Trade Center (Bucks Co.)",
@@ -225,7 +234,8 @@
       "status": "construction",
       "territory": "PECO \u2014 NOT FirstEnergy (context site)",
       "verify": true,
-      "source": "Second anchor of the $20B AWS PA plan; former US Steel Fairless Works, 1,800-acre NorthPoint redevelopment. Draws fully from the grid. PECO territory \u2014 context only."
+      "source": "Second anchor of the $20B AWS PA plan; former US Steel Fairless Works, 1,800-acre NorthPoint redevelopment. Draws fully from the grid. PECO territory \u2014 context only.",
+      "coverage": "context-only (utility not polled)"
     },
     {
       "name": "AWS Kline Twp campus (Schuylkill Co.)",
@@ -235,7 +245,8 @@
       "status": "announced",
       "territory": "Met-Ed / PPL border \u2014 VERIFY",
       "verify": true,
-      "source": "DCD May 2026: 2.5M sq ft, 1,600 acres rezoned 'Special Data Center Overlay District', 15 buildings over a decade; Banks Twp also eyed. Territory must be confirmed \u2014 if Met-Ed, this is a live FE test site."
+      "source": "DCD May 2026: 2.5M sq ft, 1,600 acres rezoned 'Special Data Center Overlay District', 15 buildings over a decade; Banks Twp also eyed. Territory must be confirmed \u2014 if Met-Ed, this is a live FE test site.",
+      "coverage": "polled"
     },
     {
       "name": "QTS Salem Twp land assembly (Luzerne Co.)",
@@ -245,17 +256,8 @@
       "status": "announced",
       "territory": "PPL/Penelec border \u2014 VERIFY",
       "verify": true,
-      "source": "Fox56 Mar 2026: major land deal closed, township supervisors approved; construction could begin fall 2026. Watch for groundbreaking \u2014 a clean before/after natural experiment if it lands in Penelec."
-    },
-    {
-      "name": "Homer City Energy Campus (Indiana Co.)",
-      "operator": "Homer City Redevelopment / Kiewit",
-      "lat": 40.514,
-      "lon": -79.195,
-      "status": "construction",
-      "territory": "Penelec",
-      "verify": true,
-      "source": "3,200-acre former coal plant; up to 4.5GW on-site gas; FE/Penelec interconnection. Power targeted 2027. Largely self-powered \u2014 distribution signal is construction-phase only."
+      "source": "Fox56 Mar 2026: major land deal closed, township supervisors approved; construction could begin fall 2026. Watch for groundbreaking \u2014 a clean before/after natural experiment if it lands in Penelec.",
+      "coverage": "polled"
     },
     {
       "name": "Quantum Frederick (former Alcoa Eastalco, Frederick Co.)",
@@ -265,7 +267,8 @@
       "status": "construction",
       "territory": "Potomac Edison",
       "verify": true,
-      "source": "FE newsroom: Potomac Edison building a NEW SUBSTATION to serve this campus (PJM + MD PSC review). 2,100-acre master-planned DC campus on the old Alcoa smelter site, fiber-ringed to Ashburn VA via QLoop. THE flagship FE-territory test case outside Ohio \u2014 utility-confirmed, mid-construction, grid work in progress."
+      "source": "FE newsroom: Potomac Edison building a NEW SUBSTATION to serve this campus (PJM + MD PSC review). 2,100-acre master-planned DC campus on the old Alcoa smelter site, fiber-ringed to Ashburn VA via QLoop. THE flagship FE-territory test case outside Ohio \u2014 utility-confirmed, mid-construction, grid work in progress.",
+      "coverage": "polled"
     },
     {
       "name": "Fort Martin gas plant + DC load (Maidsville, Monongalia Co.)",
@@ -275,7 +278,8 @@
       "status": "announced",
       "territory": "Mon Power",
       "verify": true,
-      "source": "FE PR Feb 2026: 35-acre site next to Fort Martin Power Station for a new 1,200MW gas plant; PSC approval pending, site work as early as 2027. FE's own IRP says DC growth 'could change this forecast drastically'. Generation-side, not a DC itself \u2014 flagged as the WV load anchor to watch."
+      "source": "FE PR Feb 2026: 35-acre site next to Fort Martin Power Station for a new 1,200MW gas plant; PSC approval pending, site work as early as 2027. FE's own IRP says DC growth 'could change this forecast drastically'. Generation-side, not a DC itself \u2014 flagged as the WV load anchor to watch.",
+      "coverage": "polled"
     },
     {
       "name": "TeraWulf Lake Mariner (Barker, Niagara Co.)",
@@ -285,7 +289,8 @@
       "status": "construction",
       "territory": "National Grid (NYISO Zone A)",
       "verify": true,
-      "source": "Flagship NY AI campus on the retired Somerset coal plant site, 180 acres. 60MW live for Core42; 440MW leased (Fluidstack 200MW+, Google-backed); ~500MW near-term, 750MW-1GW build-out pending NYISO approval. Buildings CB-3..CB-5 delivering through 2026 \u2014 ACTIVE construction. Reuses the plant's dual 345kV lines rather than new HV build. TeraWulf 10-Q FY2026 + Schneider $290M buildout (May 2026)."
+      "source": "Flagship NY AI campus on the retired Somerset coal plant site, 180 acres. 60MW live for Core42; 440MW leased (Fluidstack 200MW+, Google-backed); ~500MW near-term, 750MW-1GW build-out pending NYISO approval. Buildings CB-3..CB-5 delivering through 2026 \u2014 ACTIVE construction. Reuses the plant's dual 345kV lines rather than new HV build. TeraWulf 10-Q FY2026 + Schneider $290M buildout (May 2026).",
+      "coverage": "polled"
     },
     {
       "name": "Micron Clay megafab (Onondaga Co.)",
@@ -295,7 +300,8 @@
       "status": "construction",
       "territory": "National Grid",
       "verify": true,
-      "source": "Not a data center \u2014 a chip fab \u2014 but the largest new load in upstate NY and the same grid-stress question. Included as a load anchor; exclude from DC evidence rings if you want a clean test."
+      "source": "Not a data center \u2014 a chip fab \u2014 but the largest new load in upstate NY and the same grid-stress question. Included as a load anchor; exclude from DC evidence rings if you want a clean test.",
+      "coverage": "polled"
     },
     {
       "name": "TeraWulf western NY expansion site (TBD)",
@@ -305,7 +311,74 @@
       "status": "announced",
       "territory": "National Grid \u2014 VERIFY",
       "verify": true,
-      "source": "Technology Magazine May 2026: 'lessons learned at Barker informing upcoming sites in Kentucky, western New York and Texas.' Placeholder \u2014 replace coords when the parcel is named."
+      "source": "Technology Magazine May 2026: 'lessons learned at Barker informing upcoming sites in Kentucky, western New York and Texas.' Placeholder \u2014 replace coords when the parcel is named.",
+      "coverage": "polled"
+    },
+    {
+      "name": "Monarch Compute Campus / Mountaineer GigaSystem (Point Pleasant, Mason Co.)",
+      "operator": "Nscale (acq. AIPCorp/Fidelis) \u2014 MOU w/ Microsoft, 1.35GW",
+      "lat": 38.92,
+      "lon": -82.13,
+      "status": "construction",
+      "territory": "Mon Power \u2014 VERIFY (self-microgrid)",
+      "verify": true,
+      "source": "2,380-acre AI campus + microgrid N of Point Pleasant. Nscale acquired Mar 2026; Microsoft MOU for 1.35GW (NVIDIA Vera Rubin). Biomass/H2 permit surrendered May 2026 \u2014 pivoted to 'immediate establishment of advanced computing data centers'. NOTE: designed as a STANDALONE MICROGRID ('will not pull any power from the grid') \u2014 so steady-state load impact ~0, but 5,500 construction jobs and a 23-mile gas line = heavy construction-phase activity. Exactly the mechanism we test.",
+      "coverage": "polled"
+    },
+    {
+      "name": "Northern Kentucky / BE NKY hyperscale recruitment corridor (Boone/Kenton Co.)",
+      "operator": "TBD (BE NKY Growth Partnership recruiting)",
+      "lat": 39.04,
+      "lon": -84.66,
+      "status": "announced",
+      "territory": "Duke Energy Ohio/KY",
+      "verify": true,
+      "source": "BE NKY actively recruiting hyperscalers near CVG airport + fiber routes; Kenton Co. among KY counties with active feasibility studies (Kentucky Lantern, May 2026: ~30 KY projects in discussion). PLACEHOLDER CENTROID \u2014 replace with the parcel when a site is named.",
+      "coverage": "polled"
+    },
+    {
+      "name": "CONTROL \u2014 Medina Co. growth corridor (I-71/SR-18)",
+      "operator": "n/a",
+      "lat": 41.139,
+      "lon": -81.864,
+      "status": "control",
+      "territory": "Ohio Edison",
+      "verify": true,
+      "source": "Exurban growth corridor, active residential/commercial construction, NO data center. Matched to Lordstown/Ravenna county type.",
+      "coverage": "polled"
+    },
+    {
+      "name": "CONTROL \u2014 Delaware Co. growth corridor (US-23/Sunbury)",
+      "operator": "n/a",
+      "lat": 40.247,
+      "lon": -82.86,
+      "status": "control",
+      "territory": "AEP Ohio",
+      "verify": true,
+      "source": "Fastest-growing OH county, heavy construction, NO data center. Control for the New Albany alley.",
+      "coverage": "polled"
+    },
+    {
+      "name": "CONTROL \u2014 Butler Co. growth corridor (Liberty Twp)",
+      "operator": "n/a",
+      "lat": 39.39,
+      "lon": -84.38,
+      "status": "control",
+      "territory": "Duke Energy Ohio",
+      "verify": true,
+      "source": "Exurban Cincinnati growth, NO data center. Control for the Duke feed.",
+      "coverage": "polled"
+    },
+    {
+      "name": "CONTROL \u2014 Wood Co. corridor (Perrysburg)",
+      "operator": "n/a",
+      "lat": 41.557,
+      "lon": -83.627,
+      "status": "control",
+      "territory": "Toledo Edison",
+      "verify": true,
+      "source": "Growth + industrial construction in the same county as Meta Bowling Green, but ~20km away. Tightest control we have.",
+      "coverage": "polled"
     }
   ]
 }

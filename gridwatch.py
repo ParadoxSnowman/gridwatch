@@ -104,6 +104,11 @@ DEFAULT_CONFIG = {
     "bbox": {"west": -84.9, "south": 40.2, "east": -80.4, "north": 42.1},
     # Tile layer name (from a live tile URL: .../public/cluster-5/{qk}.json)
     "kubra_layer": "cluster-5",
+    # Blind widening stops here: known pyramids start by zoom 10, so no
+    # tiles by then = zero outages in the region.
+    "widen_max_zoom": 10,
+    # Hard circuit breaker per region (healthy storm-day use: a few hundred)
+    "max_tiles_per_region": 4000,
     # Quadkey zoom sweep. KUBRA serves cluster tiles at multiple zooms;
     # deeper zoom = more tile fetches but individual (non-clustered) outages.
     "zoom_min": 8,
@@ -307,9 +312,15 @@ class Kubra:
         # find the top of the tile pyramid
         zoom = cfg["zoom_min"]
         frontier = quadkeys_for_bbox(bbox, zoom)
+        tiles_requested, budget = 0, cfg.get("max_tiles_per_region", 4000)
         while zoom <= cfg["zoom_max"]:
+            if tiles_requested + len(frontier) > budget:
+                print(f"[!] [{self.region['name']}] tile budget ({budget}) "
+                      f"reached at zoom {zoom} — stopping with what we have.")
+                break
             next_frontier, n_inc, n_clu, any_tile = [], 0, 0, False
             for qk in frontier:
+                tiles_requested += 1
                 payload = self._fetch_tile(ctx, qk)
                 time.sleep(0.04)
                 if payload is None:
@@ -335,10 +346,15 @@ class Kubra:
             print(f"[i] zoom {zoom}: {len(frontier)} tiles, "
                   f"{n_inc} incidents, {n_clu} clusters pending "
                   f"({len(incidents)} unique incidents so far)")
-            if not any_tile and not incidents and not pending_clusters \
-                    and zoom < cfg["zoom_max"]:
-                next_frontier = quadkeys_for_bbox(bbox, zoom + 1)
-                print(f"[i] no tiles at zoom {zoom}; widening to {zoom+1}")
+            if not any_tile and not incidents and not pending_clusters:
+                if zoom < cfg.get("widen_max_zoom", 10):
+                    next_frontier = quadkeys_for_bbox(bbox, zoom + 1)
+                    print(f"[i] [{self.region['name']}] no tiles at zoom "
+                          f"{zoom}; widening to {zoom+1}")
+                else:
+                    print(f"[i] [{self.region['name']}] no tiles through "
+                          f"zoom {zoom} — region is quiet (0 outages).")
+                    break
             frontier, zoom = next_frontier, zoom + 1
             if not frontier:
                 break

@@ -12,7 +12,7 @@ concurrency:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,6 +22,7 @@ jobs:
       - name: Poll outages and emit JSON
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DUKE_BASIC_TOKEN: ${{ secrets.DUKE_BASIC_TOKEN }}
         run: python gridwatch.py poll --emit docs/data --no-db
       - name: Commit snapshot
         run: |

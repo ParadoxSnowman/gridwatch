@@ -107,6 +107,11 @@
     </div>
 
     <div id="tab-history" style="display:none">
+      <div class="card"><h2>Restoration & momentary events (7d)</h2>
+        <table id="durtable"><thead><tr><th>region</th>
+          <th class="n">avg min</th><th class="n">median</th>
+          <th class="n">momentary</th></tr></thead><tbody></tbody></table>
+        <div class="caveat" id="durnote">loading…</div></div>
       <div class="card"><h2>Timeline — unique outages/day</h2>
         <div id="tl" title="amber = fair-weather share, blue = weather"></div>
         <div class="meta" id="tl-meta">click a bar to load that day</div></div>
@@ -495,8 +500,24 @@ async function boot(){
   document.getElementById("loadday").onclick=()=>loadHistDay(document.getElementById("daysel").value);
   timeline();
   loadEvidence(30);
+  try{ renderDurations(await fetch("data/durations.json?t="+Date.now()).then(r=>r.json())); }catch(e){}
   try{ renderBurden(await fetch("data/pjm_burden.json").then(r=>r.json())); }catch(e){}
   setTimeout(refresh,REFRESH_MS);
+}
+function renderDurations(D){
+  const tb=document.querySelector("#durtable tbody"); if(!tb) return; tb.innerHTML="";
+  const regs=Object.entries(D.regions||{}).sort((a,b)=>b[1].resolved-a[1].resolved);
+  if(!regs.length){document.getElementById("durnote").textContent="No resolved incidents in window yet.";return;}
+  for(const [name,r] of regs){
+    const tr=document.createElement("tr");
+    const hrs=r.avg_min>=90?` (${(r.avg_min/60).toFixed(1)}h)`:"";
+    tr.innerHTML=`<td>${esc(name)}</td>
+      <td class="n">${r.avg_min}${hrs}</td>
+      <td class="n">${r.median_min}</td>
+      <td class="n">${r.momentary} · ${r.momentary_pct}%</td>`;
+    tb.appendChild(tr);
+  }
+  document.getElementById("durnote").textContent=D.note||"";
 }
 function renderBurden(B){
   const a=B.auctions||[]; if(!a.length) return;

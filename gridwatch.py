@@ -1345,13 +1345,14 @@ def _maybe_alert(emit_dir, records, cfg):
         print(f"[!] alert failed (non-fatal): {e}")
 
 
-def _emit_json(emit_dir, polled_at, records, cfg):
+def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
     """Write docs/data/latest.json + append daily NDJSON history for the
     static GitHub Pages map. Small, git-friendly files."""
     os.makedirs(os.path.join(emit_dir, "history"), exist_ok=True)
     latest = {"generated_at": polled_at,
               "dc_radius_km": cfg["dc_radius_km"],
               "count": len(records),
+              "feeds": feeds or [],
               "outages": records}
     with open(os.path.join(emit_dir, "latest.json"), "w") as f:
         json.dump(latest, f, separators=(",", ":"))

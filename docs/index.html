@@ -76,7 +76,9 @@
 <div id="app">
   <div id="side">
     <header><h1>GRIDWATCH</h1><span class="pulse" title="auto-refreshing"></span>
-      <span class="meta" id="refresh">—</span></header>
+      <span class="meta" id="refresh">—</span>
+      <button id="refetch" title="re-fetch the latest published data (does not re-scrape utilities)"
+        style="margin-left:auto;padding:3px 10px;font-size:12px">↻ refresh</button></header>
     <div class="sub" id="tagline">outages &times; weather &times; data center proximity</div>
 
     <div class="kstrip">
@@ -568,10 +570,24 @@ setInterval(()=>{
   if(!LATEST||!LATEST.generated_at||LATEST.generated_at==="never"){
     document.getElementById("refresh").textContent="no data yet";return;}
   const age=Math.max(0,Math.round((Date.now()-Date.parse(LATEST.generated_at))/1000));
-  const m=Math.floor(age/60);
-  document.getElementById("refresh").textContent=
-    m<1?"data <1m old":m<60?`data ${m}m old`:`data ${Math.floor(m/60)}h ${m%60}m old`;
+  const m=Math.floor(age/60), el=document.getElementById("refresh");
+  el.textContent=m<1?"data <1m old":m<60?`data ${m}m old`:`data ${Math.floor(m/60)}h ${m%60}m old`;
+  el.style.color=m>45?"var(--red)":m>25?"var(--amber)":"var(--dim)";
+  el.title=m>45?"poller may be stalled — check Actions":m>25?"older than one poll cycle (CDN lag or delayed runner)":"fresh";
 },1000);
+async function refetchNow(){
+  const b=document.getElementById("refetch"); if(b){b.disabled=true;b.textContent="…";}
+  try{
+    const latest=await fetch("data/latest.json?t="+Date.now()).then(r=>r.json());
+    LATEST=latest;
+    renderFeeds();
+    if(currentView==="live")
+      plot(latest.outages||[],document.getElementById("live-meta"),liveLabel());
+    try{INDEX=await fetch("data/history/index.json?t="+Date.now()).then(r=>r.json());timeline();}catch(e){}
+    try{renderDurations(await fetch("data/durations.json?t="+Date.now()).then(r=>r.json()));}catch(e){}
+  }catch(e){}
+  if(b){b.disabled=false;b.textContent="↻ refresh";}
+}
 async function refresh(){
   try{
     const latest=await fetch("data/latest.json?t="+Date.now()).then(r=>r.json());
@@ -626,6 +642,7 @@ async function boot(){
   document.getElementById("loadday").onclick=()=>loadHistDay(document.getElementById("daysel").value);
   timeline();
   loadEvidence(30);
+  const rb=document.getElementById("refetch"); if(rb) rb.onclick=refetchNow;
   try{ renderDurations(await fetch("data/durations.json?t="+Date.now()).then(r=>r.json())); }catch(e){}
   try{ renderBurden(await fetch("data/pjm_burden.json").then(r=>r.json())); }catch(e){}
   setTimeout(refresh,REFRESH_MS);

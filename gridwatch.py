@@ -1089,7 +1089,9 @@ def fetch_powerlines(cfg, sites, out_path, radius_km=12):
         box = (f"{s['lat']-deg},{s['lon']-deg/0.75},"
                f"{s['lat']+deg},{s['lon']+deg/0.75}")
         parts.append(f'way["power"="line"]({box});')
-    q = f"[out:json][timeout:90];({''.join(parts)});out geom tags;"
+        parts.append(f'nwr["power"="substation"]({box});')
+        parts.append(f'nwr["power"="plant"]({box});')
+    q = f"[out:json][timeout:120];({''.join(parts)});out geom center tags;"
     try:
         r = requests.post(OVERPASS_URL, data={"data": q}, timeout=120,
                           headers={"User-Agent": cfg["nws_user_agent"]})
@@ -1098,32 +1100,49 @@ def fetch_powerlines(cfg, sites, out_path, radius_km=12):
     except Exception as e:
         print(f"[!] Overpass powerlines failed (non-fatal): {e}")
         return False
-    lines, seen = [], set()
+    lines, subs, plants, seen = [], [], [], set()
     for el in elements:
-        if el.get("type") != "way" or el.get("id") in seen:
+        eid = (el.get("type"), el.get("id"))
+        if eid in seen:
             continue
-        seen.add(el.get("id"))
-        geom = [[round(p["lat"], 5), round(p["lon"], 5)]
-                for p in el.get("geometry", [])]
-        if len(geom) < 2:
-            continue
+        seen.add(eid)
         t = el.get("tags", {}) or {}
-        lines.append({"id": el["id"],
-                      "name": t.get("name", ""),
-                      "voltage": t.get("voltage", ""),
-                      "operator": t.get("operator", ""),
-                      "cables": t.get("cables", ""),
-                      "geom": geom})
+        p = t.get("power")
+        if p == "line" and el.get("type") == "way":
+            geom = [[round(pt["lat"], 5), round(pt["lon"], 5)]
+                    for pt in el.get("geometry", [])]
+            if len(geom) >= 2:
+                lines.append({"id": el["id"], "name": t.get("name", ""),
+                              "voltage": t.get("voltage", ""),
+                              "operator": t.get("operator", ""),
+                              "cables": t.get("cables", ""), "geom": geom})
+            continue
+        # substations / plants: nodes carry lat/lon; ways/relations a center
+        la = el.get("lat") or (el.get("center") or {}).get("lat")
+        lo = el.get("lon") or (el.get("center") or {}).get("lon")
+        if la is None:
+            continue
+        item = {"id": el["id"], "name": t.get("name", ""),
+                "operator": t.get("operator", ""),
+                "voltage": t.get("voltage", ""),
+                "lat": round(la, 5), "lon": round(lo, 5)}
+        if p == "substation":
+            subs.append(item)
+        elif p == "plant":
+            item["source"] = t.get("plant:source", "")
+            item["output"] = t.get("plant:output:electricity", "")
+            plants.append(item)
     payload = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                "radius_km": radius_km,
                "note": "OSM power=line ways within radius of active-change "
                        "sites. Crowd-mapped visible infrastructure. Which "
                        "specific line FEEDS a site needs the interconnection "
                        "docket; this shows what's physically nearby.",
-               "lines": lines}
+               "lines": lines, "substations": subs, "plants": plants}
     with open(out_path, "w") as f:
         json.dump(payload, f, separators=(",", ":"))
-    print(f"[i] powerlines: {len(lines)} OSM transmission segments -> {out_path}")
+    print(f"[i] powerlines: {len(lines)} lines, {len(subs)} substations, "
+          f"{len(plants)} plants -> {out_path}")
     return True
 
 
@@ -1253,6 +1272,32 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
                          if str(s.get("status", "")).startswith("operating")
                          and s.get("lat")
                          and not str(s.get("coverage", "")).startswith("context")]
+            # merge OSM-mapped operating facilities (the auto layer) so the
+            # pink rings the map draws are the SAME set the classifier uses
+            if emit_dir:
+                try:
+                    with open(os.path.join(emit_dir,
+                                           "datacenters_auto.json")) as f:
+                        auto_sites = json.load(f).get("sites", [])
+                    boxes = [r.get("bbox") for r in regions if r.get("bbox")]
+                    added = 0
+                    for a in auto_sites:
+                        la, lo = a.get("lat"), a.get("lon")
+                        if la is None:
+                            continue
+                        if not any(b["south"] <= la <= b["north"]
+                                   and b["west"] <= lo <= b["east"]
+                                   for b in boxes):
+                            continue
+                        op_usable.append({"name": f"OSM: {a.get('name') or 'data center'}",
+                                          "status": "operating", "lat": la,
+                                          "lon": lo})
+                        added += 1
+                    if added:
+                        print(f"[i] operating pool: +{added} OSM facilities "
+                              f"(total {len(op_usable)})")
+                except (OSError, ValueError):
+                    pass
             site, dist = nearest_dc(o["lat"], o["lon"], usable) if usable else (None, None)
             cls, wflag, dflag, why = classify(o, cond, alerts, site,
                                               dist if dist is not None else 1e9, cfg)
@@ -1260,8 +1305,9 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
                                 if op_usable else (None, None))
             op_near = (op_site is not None and op_dist is not None
                        and op_dist <= cfg["dc_radius_km"])
-            if op_near and not dflag and not wflag:
-                cls = "NEAR OPERATING DC FAIR-WEATHER (context)"
+            if op_near:
+                if not dflag and not wflag:
+                    cls = "NEAR OPERATING DC FAIR-WEATHER (context)"
                 why += (f" | within {op_dist:.1f} km of operating DC "
                         f"{op_site['name']} (context tier: excluded from "
                         f"evidence + alerts)")

@@ -1078,8 +1078,9 @@ def fetch_powerlines(cfg, sites, out_path, radius_km=12):
     ACTIVE curated site. OSM power mapping is crowd-sourced from visible
     infrastructure — public data, not CEII. Fail-soft."""
     active = [s for s in sites
-              if s.get("lat") and s.get("status") in
-              ("construction", "contested", "announced")]
+              if s.get("lat")
+              and (s.get("status") in ("construction", "contested", "announced")
+                   or s.get("powerlines"))]
     if not active:
         return False
     deg = radius_km / 111.0
@@ -1246,9 +1247,24 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
             ACTIVE_STATUSES = ("construction", "contested", "announced")
             usable = [s for s in sites
                       if s.get("status") in ACTIVE_STATUSES and s.get("lat")]
+            # operating DCs: context tier — never drives dc_flag/alerts, but
+            # fair-weather outages inside their rings get their own label
+            op_usable = [s for s in sites
+                         if str(s.get("status", "")).startswith("operating")
+                         and s.get("lat")
+                         and not str(s.get("coverage", "")).startswith("context")]
             site, dist = nearest_dc(o["lat"], o["lon"], usable) if usable else (None, None)
             cls, wflag, dflag, why = classify(o, cond, alerts, site,
                                               dist if dist is not None else 1e9, cfg)
+            op_site, op_dist = (nearest_dc(o["lat"], o["lon"], op_usable)
+                                if op_usable else (None, None))
+            op_near = (op_site is not None and op_dist is not None
+                       and op_dist <= cfg["dc_radius_km"])
+            if op_near and not dflag and not wflag:
+                cls = "NEAR OPERATING DC FAIR-WEATHER (context)"
+                why += (f" | within {op_dist:.1f} km of operating DC "
+                        f"{op_site['name']} (context tier: excluded from "
+                        f"evidence + alerts)")
             counts[cls] = counts.get(cls, 0) + 1
             rec = dict(polled_at=polled_at, region=o["region"],
                        outage_id=o["outage_id"], lat=o["lat"], lon=o["lon"],
@@ -1260,6 +1276,8 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
                        dc_name=site["name"] if site else None,
                        dc_km=round(dist, 2) if dist is not None else None,
                        dc_status=site.get("status") if site else None,
+                       op_dc_name=op_site["name"] if op_near else None,
+                       op_dc_km=round(op_dist, 2) if op_near else None,
                        weather_flag=int(wflag), dc_flag=int(dflag),
                        classification=cls, rationale=why)
             emitted.append(rec)
@@ -1463,6 +1481,18 @@ def _emit_durations(emit_dir, hist_dir, days, window=7, poll_minutes=15):
                     "brownout/voltage-sag data is utility-internal and only "
                     "surfaces in PUCO reliability filings."),
            "regions": {}}
+    longest = []
+    for s in spans.values():
+        if s["last"] == newest:
+            continue
+        try:
+            t0 = datetime.fromisoformat(s["first"]); t1 = datetime.fromisoformat(s["last"])
+        except ValueError:
+            continue
+        longest.append({"region": s["region"],
+                        "minutes": round((t1 - t0).total_seconds() / 60 + poll_minutes),
+                        "customers": s["customers"]})
+    out["longest"] = sorted(longest, key=lambda x: -x["minutes"])[:5]
     for reg, b in sorted(by_region.items()):
         if not b["durs"]:
             continue

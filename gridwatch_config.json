@@ -1,5 +1,5 @@
 {
-  "_help": "Each KUBRA view has its OWN instance/view GUIDs AND its own cluster layer (FE-OH=5, FE-PA=6, FE-NJ=7, FE-MDWV=4, NatGrid-NY=2). A wrong layer silently 404s every tile \u2014 if a region goes blank, delete its kubra_layer line to force auto-detect, then re-pin what the log prints. Duke regions need repo secret DUKE_BASIC_TOKEN passed as an env var by the workflow. AEP serves from CloudFront, not its own domain. AES is a plain XML feed.",
+  "_help": "KUBRA layer numbers are per-deployment and RESHUFFLE when a utility redeploys (FE moved everything to cluster-5 mid-July 2026). If a region goes to zero, delete its kubra_layer line \u2014 auto-detect sweeps cluster-1..7 and prints the winner to re-pin. Duke needs secret DUKE_BASIC_TOKEN; PJM flows need secret PJM_API_KEY.",
   "regions": [
     {
       "name": "OH",
@@ -19,7 +19,7 @@
       "entry": "https://outages-pa.firstenergycorp.com/",
       "instance_id": "6c715f0e-bbec-465f-98cc-0b81623744be",
       "view_id": "8587e451-e258-4692-b5e8-28010506d51a",
-      "kubra_layer": "cluster-6",
+      "kubra_layer": "cluster-5",
       "max_tiles": 30000,
       "bbox": {
         "west": -80.6,
@@ -33,7 +33,7 @@
       "entry": "https://outages-nj.firstenergycorp.com/",
       "instance_id": "6c715f0e-bbec-465f-98cc-0b81623744be",
       "view_id": "fcd7c23d-de37-4471-8ca3-37c3260f94fa",
-      "kubra_layer": "cluster-7",
+      "kubra_layer": "cluster-5",
       "bbox": {
         "west": -75.7,
         "south": 38.8,
@@ -46,7 +46,7 @@
       "entry": "https://outages-mdwv.firstenergycorp.com/",
       "instance_id": "6c715f0e-bbec-465f-98cc-0b81623744be",
       "view_id": "5ed3ddf1-3a6f-4cfd-8957-eba54b5baaad",
-      "kubra_layer": "cluster-4",
+      "kubra_layer": "cluster-5",
       "max_tiles": 30000,
       "bbox": {
         "west": -82.7,
@@ -154,7 +154,8 @@
         "south": 38.2,
         "east": -75.9,
         "north": 39.8
-      }
+      },
+      "kubra_layer": "cluster-1"
     },
     {
       "name": "PECO",
@@ -167,7 +168,8 @@
         "south": 39.6,
         "east": -74.7,
         "north": 40.7
-      }
+      },
+      "kubra_layer": "cluster-1"
     },
     {
       "name": "MA-NGRID",
@@ -231,7 +233,8 @@
         "south": 38.75,
         "east": -76.85,
         "north": 39.1
-      }
+      },
+      "kubra_layer": "cluster-1"
     },
     {
       "name": "DE-DELMARVA",
@@ -270,7 +273,8 @@
         "south": 36.5,
         "east": -77.9,
         "north": 39.5
-      }
+      },
+      "kubra_layer": "cluster-2"
     },
     {
       "name": "NJ-PSEG",
@@ -283,7 +287,8 @@
         "south": 39.5,
         "east": -73.9,
         "north": 41.4
-      }
+      },
+      "kubra_layer": "cluster-1"
     },
     {
       "name": "NY-CENHUD",
@@ -296,7 +301,8 @@
         "south": 41.3,
         "east": -73.3,
         "north": 42.4
-      }
+      },
+      "kubra_layer": "cluster-1"
     },
     {
       "name": "SC-DOM",
@@ -310,7 +316,8 @@
         "south": 32.0,
         "east": -78.5,
         "north": 35.2
-      }
+      },
+      "kubra_layer": "cluster-1"
     },
     {
       "name": "PA-PPL",

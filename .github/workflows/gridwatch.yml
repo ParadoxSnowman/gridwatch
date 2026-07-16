@@ -23,6 +23,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DUKE_BASIC_TOKEN: ${{ secrets.DUKE_BASIC_TOKEN }}
+          PJM_API_KEY: ${{ secrets.PJM_API_KEY }}
         run: python gridwatch.py poll --emit docs/data --no-db
       - name: Commit snapshot
         run: |

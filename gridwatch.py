@@ -1361,13 +1361,15 @@ def fetch_powerlines(cfg, sites, out_path, radius_km=12):
     return True
 
 
-def _auto_layer_stale(path):
+def _auto_layer_stale(path, max_age_hours=None):
     if not os.path.exists(path):
         return True
     try:
         with open(path) as f:
             gen = json.load(f).get("generated_at", "")
         age = datetime.now(timezone.utc) - datetime.fromisoformat(gen)
+        if max_age_hours is not None:
+            return age > timedelta(hours=max_age_hours)
         return age > timedelta(days=AUTO_MAX_AGE_DAYS)
     except Exception:
         return True
@@ -1450,34 +1452,76 @@ def _regions(cfg):
     return regs
 
 
-def fetch_backbone(cfg, regions, out_path):
-    """Weekly pull of the >=345kV transmission backbone across every polled
-    region bbox (OSM Overpass). Corridor-scale layer: the spine data centers
-    site themselves along. Geometry decimated, deduped, size-guarded."""
+OVERPASS_ENDPOINTS = ["https://overpass-api.de/api/interpreter",
+                      "https://overpass.kumi.systems/api/interpreter"]
+OVERPASS_BATCH = 3      # regions per poll — spread heavy pulls across runs
+
+
+def _overpass_query(cfg, q):
+    """One Overpass query with endpoint rotation and a single 429 backoff.
+    Free shared infrastructure: 25 heavy queries in one run got us 504/429'd,
+    so collection is incremental (OVERPASS_BATCH regions/poll, resumed via a
+    'pending' list persisted in the output file)."""
     import requests as rq
+    last = None
+    for ep in OVERPASS_ENDPOINTS:
+        for attempt in (1, 2):
+            try:
+                r = rq.post(ep, data={"data": q}, timeout=180,
+                            headers={"User-Agent": cfg.get(
+                                "nws_user_agent", "GRIDWATCH")})
+                if r.status_code == 429 and attempt == 1:
+                    time.sleep(20)
+                    continue
+                r.raise_for_status()
+                return r.json().get("elements", [])
+            except Exception as e:
+                last = e
+                break
+    raise RuntimeError(last)
+
+
+def _layer_pending(path):
+    try:
+        with open(path) as f:
+            return bool(json.load(f).get("pending"))
+    except Exception:
+        return False
+
+
+def fetch_backbone(cfg, regions, out_path):
+    """>=345kV transmission backbone across polled bboxes — collected
+    incrementally (OVERPASS_BATCH regions/poll, resume via 'pending')."""
+    state = {"lines": [], "pending": None}
+    try:
+        with open(out_path) as f:
+            state = json.load(f)
+    except Exception:
+        pass
+    named = [r for r in regions if r.get("bbox")]
+    if state.get("pending") is None:
+        state["pending"] = [r["name"] for r in named]
+        state["lines"] = []
+    pending = [r for r in named if r["name"] in state["pending"]]
+    if not pending:
+        return True
     VOLT = "345000|380000|400000|500000|765000"
-    lines, seen = [], set()
-    for reg in regions:
-        b = reg.get("bbox")
-        if not b:
-            continue
+    have = {l.get("id") for l in state.get("lines", [])}
+    done_now = []
+    for reg in pending[:OVERPASS_BATCH]:
+        b = reg["bbox"]
         q = (f'[out:json][timeout:120];way["power"="line"]'
              f'["voltage"~"{VOLT}"]({b["south"]},{b["west"]},'
              f'{b["north"]},{b["east"]});out geom tags;')
         try:
-            r = rq.post("https://overpass-api.de/api/interpreter",
-                        data={"data": q}, timeout=150,
-                        headers={"User-Agent": cfg.get("nws_user_agent",
-                                                       "GRIDWATCH")})
-            r.raise_for_status()
-            els = r.json().get("elements", [])
+            els = _overpass_query(cfg, q)
         except Exception as e:
-            print(f"[!] backbone {reg['name']} failed (non-fatal): {e}")
+            print(f"[!] backbone {reg['name']} failed (stays pending): {e}")
             continue
         for el in els:
-            if el.get("id") in seen:
+            if el.get("id") in have:
                 continue
-            seen.add(el.get("id"))
+            have.add(el.get("id"))
             t = el.get("tags", {}) or {}
             pts = [[round(p["lat"], 4), round(p["lon"], 4)]
                    for p in el.get("geometry", [])]
@@ -1490,20 +1534,157 @@ def fetch_backbone(cfg, regions, out_path):
                     v = max(v, int(tok))
                 except ValueError:
                     pass
-            lines.append({"v": v, "name": t.get("name", ""),
-                          "operator": t.get("operator", ""), "geom": geom})
-        time.sleep(2)
-    payload = json.dumps({"generated_at": _now_iso(), "min_voltage": 345000,
-                          "lines": lines}, separators=(",", ":"))
+            state["lines"].append({"id": el.get("id"), "v": v,
+                                   "name": t.get("name", ""),
+                                   "operator": t.get("operator", ""),
+                                   "geom": geom})
+        done_now.append(reg["name"])
+        time.sleep(5)
+    state["pending"] = [n for n in state["pending"] if n not in done_now]
+    state["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    state["min_voltage"] = 345000
+    payload = json.dumps(state, separators=(",", ":"))
     if len(payload) > 9_000_000:
-        print(f"[!] backbone {len(payload)/1e6:.1f}MB > 9MB guard — not "
-              f"written; raise the voltage floor")
+        print(f"[!] backbone {len(payload)/1e6:.1f}MB > guard — not written")
         return False
     with open(out_path, "w") as f:
         f.write(payload)
-    print(f"[i] backbone: {len(lines)} HV segments "
-          f"({len(payload)/1e6:.1f}MB) -> {out_path}")
-    return bool(lines)
+    print(f"[i] backbone: +{len(done_now)} regions this poll, "
+          f"{len(state['lines'])} segments total, "
+          f"{len(state['pending'])} regions pending")
+    return True
+
+
+def fetch_grid_assets(cfg, regions, out_path):
+    """Every mapped substation + power plant across polled bboxes — the full
+    public topology (true node-level data is CEII; OSM is the public
+    reconstruction). Incremental like the backbone."""
+    state = {"substations": [], "plants": [], "pending": None}
+    try:
+        with open(out_path) as f:
+            state = json.load(f)
+    except Exception:
+        pass
+    named = [r for r in regions if r.get("bbox")]
+    if state.get("pending") is None:
+        state["pending"] = [r["name"] for r in named]
+        state["substations"], state["plants"] = [], []
+    pending = [r for r in named if r["name"] in state["pending"]]
+    if not pending:
+        return True
+    have = {(s.get("t"), s.get("id"))
+            for s in state.get("substations", []) + state.get("plants", [])}
+    done_now = []
+    for reg in pending[:OVERPASS_BATCH]:
+        b = reg["bbox"]
+        box = f'{b["south"]},{b["west"]},{b["north"]},{b["east"]}'
+        q = (f'[out:json][timeout:150];('
+             f'nwr["power"="substation"]({box});'
+             f'nwr["power"="plant"]({box}););out center tags;')
+        try:
+            els = _overpass_query(cfg, q)
+        except Exception as e:
+            print(f"[!] grid-assets {reg['name']} failed (stays pending): {e}")
+            continue
+        for el in els:
+            k = (el.get("type"), el.get("id"))
+            if k in have:
+                continue
+            have.add(k)
+            t = el.get("tags", {}) or {}
+            la = el.get("lat") or (el.get("center") or {}).get("lat")
+            lo = el.get("lon") or (el.get("center") or {}).get("lon")
+            if la is None:
+                continue
+            v = 0
+            for tok in str(t.get("voltage", "")).split(";"):
+                try:
+                    v = max(v, int(tok))
+                except ValueError:
+                    pass
+            item = {"t": el.get("type"), "id": el.get("id"),
+                    "n": t.get("name", ""), "o": t.get("operator", ""),
+                    "v": v, "lat": round(la, 4), "lon": round(lo, 4)}
+            if t.get("power") == "substation":
+                state["substations"].append(item)
+            else:
+                item["src"] = t.get("plant:source", "")
+                item["out"] = t.get("plant:output:electricity", "")
+                state["plants"].append(item)
+        done_now.append(reg["name"])
+        time.sleep(5)
+    state["pending"] = [n for n in state["pending"] if n not in done_now]
+    state["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    state["note"] = "OSM reconstruction; true topology is CEII"
+    payload = json.dumps(state, separators=(",", ":"))
+    if len(payload) > 9_000_000:
+        state["substations"] = [s for s in state["substations"]
+                                if s["v"] >= 100000]
+        payload = json.dumps(state, separators=(",", ":"))
+    with open(out_path, "w") as f:
+        f.write(payload)
+    print(f"[i] grid assets: +{len(done_now)} regions this poll, "
+          f"{len(state['substations'])} subs / {len(state['plants'])} plants, "
+          f"{len(state['pending'])} pending")
+    return True
+
+
+def fetch_pjm_flows(cfg, out_path):
+    """Daily PJM Data Miner 2 pull: yesterday's day-ahead hourly zonal LMPs,
+    averaged per zone with the congestion component split out. This is the
+    'who is pulling on the shared grid' layer — the Dominion-vs-Ohio spread
+    is where NoVA data center load shows up in dollars. Needs the free
+    Data Miner 2 subscription key in env PJM_API_KEY."""
+    key = os.environ.get("PJM_API_KEY")
+    if not key:
+        print("[i] PJM flows: no PJM_API_KEY set — skipping (register free at "
+              "dataminer2.pjm.com, put the key in a repo secret)")
+        return False
+    import requests as rq
+    from datetime import datetime, timedelta, timezone
+    day = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%m/%d/%Y")
+    params = {"rowCount": 50000, "startRow": 1, "download": "true",
+              "datetime_beginning_ept": f"{day} 00:00to{day} 23:59",
+              "type": "ZONE",
+              "fields": "datetime_beginning_ept,pnode_name,type,"
+                        "total_lmp_da,congestion_price_da"}
+    try:
+        r = rq.get("https://api.pjm.com/api/v1/da_hrl_lmps", params=params,
+                   headers={"Ocp-Apim-Subscription-Key": key,
+                            "User-Agent": cfg.get("nws_user_agent",
+                                                  "GRIDWATCH")},
+                   timeout=90)
+        r.raise_for_status()
+        data = r.json()
+        rows = data if isinstance(data, list) else data.get("items", [])
+    except Exception as e:
+        print(f"[!] PJM flows failed (non-fatal): {e}")
+        return False
+    agg = {}
+    for row in rows:
+        z = row.get("pnode_name")
+        try:
+            lmp = float(row.get("total_lmp_da"))
+            cong = float(row.get("congestion_price_da") or 0)
+        except (TypeError, ValueError):
+            continue
+        a = agg.setdefault(z, {"n": 0, "lmp": 0.0, "cong": 0.0})
+        a["n"] += 1; a["lmp"] += lmp; a["cong"] += cong
+    zones = [{"zone": z, "avg_lmp": round(a["lmp"]/a["n"], 2),
+              "avg_congestion": round(a["cong"]/a["n"], 2), "hours": a["n"]}
+             for z, a in agg.items() if a["n"]]
+    zones.sort(key=lambda x: -x["avg_lmp"])
+    spread = None
+    zl = {z["zone"]: z for z in zones}
+    if "DOM" in zl and "ATSI" in zl:
+        spread = round(zl["DOM"]["avg_lmp"] - zl["ATSI"]["avg_lmp"], 2)
+    with open(out_path, "w") as f:
+        json.dump({"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "day": day, "zones": zones,
+                   "dom_minus_atsi": spread}, f, separators=(",", ":"))
+    print(f"[i] PJM flows: {len(zones)} zones for {day}"
+          + (f" | DOM-ATSI spread ${spread}/MWh" if spread is not None else "")
+          + f" -> {out_path}")
+    return bool(zones)
 
 
 def _fetch_region(cfg, region):
@@ -1539,47 +1720,43 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
                   for reg, res in zip(regions, results)]
     all_pts = [(o["lat"], o["lon"]) for outs in region_results for o in outs]
     wx.prefetch(all_pts)
+    # Site pools are poll-level constants — build ONCE, not per outage.
+    # Only active-change sites drive dc_flag / classification / alerts;
+    # operating + control sites are context layers.
+    ACTIVE_STATUSES = ("construction", "contested", "announced")
+    usable = [s for s in sites
+              if s.get("status") in ACTIVE_STATUSES and s.get("lat")]
+    op_usable = [s for s in sites
+                 if str(s.get("status", "")).startswith("operating")
+                 and s.get("lat")
+                 and not str(s.get("coverage", "")).startswith("context")]
+    # merge OSM-mapped operating facilities so the pink rings the map draws
+    # are the SAME set the classifier uses
+    if emit_dir:
+        try:
+            with open(os.path.join(emit_dir, "datacenters_auto.json")) as f:
+                auto_sites = json.load(f).get("sites", [])
+            boxes = [r.get("bbox") for r in regions if r.get("bbox")]
+            added = 0
+            for a in auto_sites:
+                la, lo = a.get("lat"), a.get("lon")
+                if la is None:
+                    continue
+                if not any(b["south"] <= la <= b["north"]
+                           and b["west"] <= lo <= b["east"] for b in boxes):
+                    continue
+                op_usable.append({"name": f"OSM: {a.get('name') or 'data center'}",
+                                  "status": "operating", "lat": la, "lon": lo})
+                added += 1
+            if added:
+                print(f"[i] operating pool: +{added} OSM facilities "
+                      f"(total {len(op_usable)})")
+        except (OSError, ValueError):
+            pass
     for region, outages in zip(regions, region_results):
         for o in outages:
             cond = wx.conditions(o["lat"], o["lon"])
             alerts = wx.active_alerts(o["lat"], o["lon"])
-            # Only active-change sites drive dc_flag / classification /
-            # alerts. Operating + control sites are context layers.
-            ACTIVE_STATUSES = ("construction", "contested", "announced")
-            usable = [s for s in sites
-                      if s.get("status") in ACTIVE_STATUSES and s.get("lat")]
-            # operating DCs: context tier — never drives dc_flag/alerts, but
-            # fair-weather outages inside their rings get their own label
-            op_usable = [s for s in sites
-                         if str(s.get("status", "")).startswith("operating")
-                         and s.get("lat")
-                         and not str(s.get("coverage", "")).startswith("context")]
-            # merge OSM-mapped operating facilities (the auto layer) so the
-            # pink rings the map draws are the SAME set the classifier uses
-            if emit_dir:
-                try:
-                    with open(os.path.join(emit_dir,
-                                           "datacenters_auto.json")) as f:
-                        auto_sites = json.load(f).get("sites", [])
-                    boxes = [r.get("bbox") for r in regions if r.get("bbox")]
-                    added = 0
-                    for a in auto_sites:
-                        la, lo = a.get("lat"), a.get("lon")
-                        if la is None:
-                            continue
-                        if not any(b["south"] <= la <= b["north"]
-                                   and b["west"] <= lo <= b["east"]
-                                   for b in boxes):
-                            continue
-                        op_usable.append({"name": f"OSM: {a.get('name') or 'data center'}",
-                                          "status": "operating", "lat": la,
-                                          "lon": lo})
-                        added += 1
-                    if added:
-                        print(f"[i] operating pool: +{added} OSM facilities "
-                              f"(total {len(op_usable)})")
-                except (OSError, ValueError):
-                    pass
             site, dist = nearest_dc(o["lat"], o["lon"], usable) if usable else (None, None)
             cls, wflag, dflag, why = classify(o, cond, alerts, site,
                                               dist if dist is not None else 1e9, cfg)
@@ -1636,8 +1813,14 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
         if _auto_layer_stale(pl_path):
             fetch_powerlines(cfg, sites, pl_path)
         bb_path = os.path.join(emit_dir, "backbone.json")
-        if _auto_layer_stale(bb_path):
+        if _auto_layer_stale(bb_path) or _layer_pending(bb_path):
             fetch_backbone(cfg, regions, bb_path)
+        ga_path = os.path.join(emit_dir, "grid_assets.json")
+        if _auto_layer_stale(ga_path) or _layer_pending(ga_path):
+            fetch_grid_assets(cfg, regions, ga_path)
+        fl_path = os.path.join(emit_dir, "pjm_flows.json")
+        if _auto_layer_stale(fl_path, max_age_hours=24):
+            fetch_pjm_flows(cfg, fl_path)
         _maybe_alert(emit_dir, emitted, cfg)
     print("[i] Snapshot classification:")
     for cls, n in sorted(counts.items(), key=lambda x: -x[1]):

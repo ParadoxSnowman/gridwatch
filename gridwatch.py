@@ -1762,6 +1762,69 @@ def fetch_eia_demand(cfg, out_path):
     return bool(zones)
 
 
+def fetch_eia_strain(cfg, out_path):
+    """Grid-strain proxy from EIA-930 (public domain): actual demand (D) vs
+    day-ahead forecast (DF) per balancing authority, trailing 72h. Sustained
+    actual >= ~98% of forecast is the condition under which brownouts and
+    conservation appeals happen. Honest label: 'strain conditions' — true
+    voltage-sag data is utility-internal and not published anywhere."""
+    key = os.environ.get("EIA_API_KEY")
+    if not key:
+        return False
+    import requests as rq
+    from datetime import datetime as dt, timedelta as td, timezone as tz
+    end = dt.now(tz.utc)
+    start = end - td(days=3)
+    BAS = ["PJM", "NYIS", "ISNE"]
+    params = [("api_key", key), ("frequency", "hourly"), ("data[0]", "value"),
+              ("start", start.strftime("%Y-%m-%dT%H")),
+              ("end", end.strftime("%Y-%m-%dT%H")),
+              ("sort[0][column]", "period"), ("sort[0][direction]", "asc"),
+              ("length", 5000)]
+    params += [("facets[respondent][]", b) for b in BAS]
+    params += [("facets[type][]", t) for t in ("D", "DF")]
+    try:
+        r = rq.get("https://api.eia.gov/v2/electricity/rto/region-data/data/",
+                   params=params, timeout=90)
+        r.raise_for_status()
+        rows = (r.json().get("response") or {}).get("data") or []
+    except Exception as e:
+        print(f"[!] EIA strain failed (non-fatal): {e}")
+        return False
+    series = {}
+    for row in rows:
+        ba, typ, per = row.get("respondent"), row.get("type"), row.get("period")
+        try:
+            v = float(row.get("value"))
+        except (TypeError, ValueError):
+            continue
+        series.setdefault(ba, {}).setdefault(per, {})[typ] = v
+    bas = []
+    for ba, byper in series.items():
+        ratios = []
+        for per in sorted(byper):
+            d, f = byper[per].get("D"), byper[per].get("DF")
+            if d and f:
+                ratios.append((per, 100.0 * d / f))
+        if not ratios:
+            continue
+        recent = ratios[-48:]
+        peak = max(recent, key=lambda x: x[1])
+        bas.append({"ba": ba,
+                    "latest_pct": round(recent[-1][1], 1),
+                    "latest_period": recent[-1][0],
+                    "max48_pct": round(peak[1], 1),
+                    "peak_period": peak[0],
+                    "hours_ge98": sum(1 for _, p in recent if p >= 98.0)})
+    bas.sort(key=lambda x: -x["max48_pct"])
+    with open(out_path, "w") as f:
+        json.dump({"generated_at": dt.now(tz.utc).isoformat(timespec="seconds"),
+                   "source": "EIA-930 D vs DF (US public domain)",
+                   "bas": bas}, f, separators=(",", ":"))
+    print(f"[i] EIA strain: {len(bas)} BAs -> {out_path}")
+    return bool(bas)
+
+
 def fetch_pjm_flows(cfg, out_path):
     """Daily PJM Data Miner 2 pull: yesterday's day-ahead hourly zonal LMPs,
     averaged per zone with the congestion component split out. This is the
@@ -1957,6 +2020,9 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
         ed_path = os.path.join(emit_dir, "eia_demand.json")
         if _auto_layer_stale(ed_path, max_age_hours=24):
             fetch_eia_demand(cfg, ed_path)
+        es_path = os.path.join(emit_dir, "eia_strain.json")
+        if _auto_layer_stale(es_path, max_age_hours=6):
+            fetch_eia_strain(cfg, es_path)
         ny_path = os.path.join(emit_dir, "nyiso_flows.json")
         if _auto_layer_stale(ny_path, max_age_hours=24):
             fetch_nyiso_lmps(cfg, ny_path)

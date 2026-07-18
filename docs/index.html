@@ -197,6 +197,12 @@
     </div>
 
     <div id="tab-burden" style="display:none">
+      <div class="card" id="nyflowswrap" style="display:none">
+        <h2>NY zonal prices — why they build upstate</h2>
+        <div id="nyflowscard"></div></div>
+      <div class="card" id="eiawrap" style="display:none">
+        <h2>Zone demand — EIA-930 (public domain)</h2>
+        <div id="eiacard"></div></div>
       <div class="card" id="flowswrap" style="display:none">
         <h2>PJM zonal prices — the flows layer</h2>
         <div id="flowscard"></div></div>
@@ -368,6 +374,12 @@ function renderFeeds(){
 
 
 function isContext(s){return String(s.coverage||"").startsWith("context");}
+function siteDeepLink(){
+  const m=location.hash.match(/site=([^&]+)/); if(!m) return;
+  const q=decodeURIComponent(m[1]).toLowerCase();
+  const s=DCS.find(x=>x.lat&&x.name.toLowerCase().includes(q));
+  if(s) map.setView([s.lat,s.lon],12);
+}
 function drawDCs(){
   dcLayer.clearLayers();
   const list=document.getElementById("sitelist"); list.innerHTML="";
@@ -445,7 +457,52 @@ function drawInfra(){
   document.getElementById("sitelist").appendChild(row);
 }
 
-let PL_SUBS=[],PL_PLANTS=[],BACKBONE=[],FLOWS=null;
+let PL_SUBS=[],PL_PLANTS=[],BACKBONE=[],FLOWS=null,NYFLOWS=null;
+function renderNYFlows(){
+  const el=document.getElementById("nyflowscard"), wrap=document.getElementById("nyflowswrap");
+  if(!el||!wrap) return;
+  if(!NYFLOWS||!(NYFLOWS.zones||[]).length){ wrap.style.display="none"; return; }
+  wrap.style.display="";
+  const hi=new Set(["WEST","CENTRL","GENESE"]);   // upstate DC country
+  const rows=NYFLOWS.zones.map(z=>`<tr${hi.has(z.zone)?' style="color:var(--accent)"':
+    z.zone==="N.Y.C."?' style="color:var(--red)"':''}>
+    <td>${esc(z.zone)}</td><td class="n">$${z.avg_lmp}</td>
+    <td class="n">$${z.avg_congestion}</td></tr>`).join("");
+  const h=(NYFLOWS.history||[]).filter(x=>x.nyc_minus_west!=null);
+  let trend="";
+  if(h.length>1){
+    const W=280,H=36,vals=h.map(x=>x.nyc_minus_west),
+          mx=Math.max(...vals),mn=Math.min(...vals),rg=(mx-mn)||1;
+    const pts=vals.map((v,i)=>`${(i/(vals.length-1))*W},${H-4-((v-mn)/rg)*(H-8)}`).join(" ");
+    trend=`<div class="meta" style="margin-top:6px">NYC−WEST spread, ${h.length} days:</div>
+      <svg width="${W}" height="${H}"><polyline points="${pts}" fill="none"
+        stroke="var(--accent)" stroke-width="1.5"/></svg>`;
+  }
+  el.innerHTML=`<div class="meta">day-ahead zonal LBMP, ${esc(NYFLOWS.day)}
+    ${NYFLOWS.nyc_minus_west!=null?`· <b>NYC − WEST spread: $${NYFLOWS.nyc_minus_west}/MWh</b>`:""}
+    — Zone WEST hosts Lake Mariner; cheap upstate power is why the AI campuses land there</div>
+    <table><thead><tr><th>zone</th><th class="n">avg LMP</th>
+    <th class="n">congestion</th></tr></thead><tbody>${rows}</tbody></table>${trend}
+    <div class="caveat">NYISO public data — freely redistributable, unlike PJM's.
+    The persistent spread is the price signal pulling load upstate.</div>`;
+}
+let EIAD=null;
+function renderEia(){
+  const el=document.getElementById("eiacard"), wrap=document.getElementById("eiawrap");
+  if(!el||!wrap) return;
+  if(!EIAD||!(EIAD.zones||[]).length){wrap.style.display="none";return;}
+  wrap.style.display="";
+  const oh=new Set(["ATSI","AEP","DAY","DEOK"]);
+  const rows=EIAD.zones.map(z=>`<tr${oh.has(z.zone)?' style="color:var(--accent)"':
+    z.zone==="DOM"?' style="color:var(--red)"':''}>
+    <td>${esc(z.zone)}</td><td class="n">${fmt(z.avg_mw_7d)} MW</td>
+    <td class="n">${z.delta_pct==null?"—":(z.delta_pct>0?"+":"")+z.delta_pct+"%"}</td></tr>`).join("");
+  el.innerHTML=`<div class="meta">7-day avg hourly demand by PJM subregion, vs prior 7 days.
+    DOM (red) = Data Center Alley zone; Ohio zones highlighted. Demand growth IS the
+    data-center load signal, measured directly. Source: US EIA-930, public domain.</div>
+    <table><thead><tr><th>zone</th><th class="n">avg demand</th>
+    <th class="n">wk/wk</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
 function renderFlows(){
   const el=document.getElementById("flowscard"), wrap=document.getElementById("flowswrap");
   if(!el||!wrap) return;
@@ -738,11 +795,14 @@ async function boot(){
       PL_PLANTS=ga.plants.map(p=>({id:"",name:p.n,operator:p.o,source:p.src,output:p.out,lat:p.lat,lon:p.lon}));
     }}catch(e){}
   try{FLOWS=await fetch("data/pjm_flows.json").then(r=>r.json());}catch(e){FLOWS=null;}
+  try{EIAD=await fetch("data/eia_demand.json").then(r=>r.json());}catch(e){EIAD=null;}
+  try{NYFLOWS=await fetch("data/nyiso_flows.json?t="+Date.now()).then(r=>r.json());}catch(e){NYFLOWS=null;}
   const fl=(latest.feeds||[]).filter(f=>!f.error).length;
   if(fl) document.getElementById("tagline").innerHTML=
     `outages &times; weather &times; data center proximity — ${fl} live utility feeds, Midwest&rarr;Atlantic`;
   RADIUS=latest.dc_radius_km||8;
   drawDCs();drawAuto();drawInfra();drawPlines();drawGridAssets();drawBackbone();regionChips();
+  siteDeepLink();window.addEventListener("hashchange",siteDeepLink);
   renderFeeds();
   const sf=document.getElementById("sitefilter");
   if(sf) sf.oninput=()=>{const q=sf.value.toLowerCase();
@@ -767,7 +827,7 @@ async function boot(){
     .map(d=>`<option value="${d.date}">${d.date} (${d.unique??d.records})</option>`).join("")
     ||"<option>— none —</option>";
   document.getElementById("loadday").onclick=()=>loadHistDay(document.getElementById("daysel").value);
-  timeline();sparkline();renderStates();renderClassbar();renderWatch();renderFlows();
+  timeline();sparkline();renderStates();renderClassbar();renderWatch();renderFlows();renderEia();renderNYFlows();
   loadEvidence(30);
   const rb=document.getElementById("refetch"); if(rb) rb.onclick=refetchNow;
   try{ renderDurations(await fetch("data/durations.json?t="+Date.now()).then(r=>r.json())); }catch(e){}

@@ -1629,6 +1629,139 @@ def fetch_grid_assets(cfg, regions, out_path):
     return True
 
 
+def fetch_nyiso_lmps(cfg, out_path):
+    """Daily NYISO day-ahead zonal LBMP pull — fully public CSVs, no key,
+    no redistribution restriction (unlike PJM DM2). Zone WEST hosts the
+    Lake Mariner AI campus; the NYC-vs-WEST spread is the 'data centers
+    chase cheap upstate power' story in dollars."""
+    import requests as rq, csv, io
+    from datetime import datetime, timedelta, timezone
+    day = datetime.now(timezone.utc) - timedelta(days=1)
+    ymd = day.strftime("%Y%m%d")
+    url = f"http://mis.nyiso.com/public/csv/damlbmp/{ymd}damlbmp_zone.csv"
+    try:
+        r = rq.get(url, timeout=60,
+                   headers={"User-Agent": cfg.get("nws_user_agent",
+                                                  "GRIDWATCH")})
+        r.raise_for_status()
+        rows = list(csv.DictReader(io.StringIO(r.text)))
+    except Exception as e:
+        print(f"[!] NYISO flows failed (non-fatal): {e}")
+        return False
+    agg = {}
+    for row in rows:
+        zone = (row.get("Name") or "").strip()
+        if not zone:
+            continue
+        try:
+            lmp = float(row.get("LBMP ($/MWHr)"))
+            cong = float(row.get("Marginal Cost Congestion ($/MWHr)") or 0)
+        except (TypeError, ValueError):
+            continue
+        a = agg.setdefault(zone, {"n": 0, "lmp": 0.0, "cong": 0.0})
+        a["n"] += 1; a["lmp"] += lmp; a["cong"] += cong
+    zones = [{"zone": z, "avg_lmp": round(a["lmp"]/a["n"], 2),
+              "avg_congestion": round(a["cong"]/a["n"], 2)}
+             for z, a in agg.items() if a["n"]]
+    if not zones:
+        print("[!] NYISO flows: CSV parsed but no zone rows — schema drift? "
+              "First row keys: " + ", ".join(list(rows[0].keys())[:6] if rows else []))
+        return False
+    zones.sort(key=lambda x: -x["avg_lmp"])
+    zl = {z["zone"]: z for z in zones}
+    spread = None
+    if "N.Y.C." in zl and "WEST" in zl:
+        spread = round(zl["N.Y.C."]["avg_lmp"] - zl["WEST"]["avg_lmp"], 2)
+    # append to history (the trend is the stat; one day is weather)
+    hist = []
+    try:
+        with open(out_path) as f:
+            hist = json.load(f).get("history", [])
+    except Exception:
+        pass
+    dstr = day.strftime("%Y-%m-%d")
+    hist = [h for h in hist if h.get("day") != dstr]
+    hist.append({"day": dstr, "nyc_minus_west": spread,
+                 "west": zl.get("WEST", {}).get("avg_lmp"),
+                 "nyc": zl.get("N.Y.C.", {}).get("avg_lmp")})
+    hist = sorted(hist, key=lambda h: h["day"])[-60:]
+    with open(out_path, "w") as f:
+        json.dump({"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                   "day": dstr, "zones": zones, "nyc_minus_west": spread,
+                   "history": hist}, f, separators=(",", ":"))
+    print(f"[i] NYISO flows: {len(zones)} zones for {dstr}"
+          + (f" | NYC-WEST spread ${spread}/MWh" if spread is not None else "")
+          + f" | {len(hist)}d history")
+    return True
+
+
+def fetch_eia_demand(cfg, out_path):
+    """Daily EIA-930 pull: hourly demand by PJM subregion, trailing 14 days,
+    7d-vs-prior-7d per zone. US-government public-domain data — clean to
+    publish, unlike PJM DM2. Free instant key: eia.gov/opendata/register.php
+    -> repo secret EIA_API_KEY."""
+    key = os.environ.get("EIA_API_KEY")
+    if not key:
+        print("[i] EIA demand: no EIA_API_KEY — skipping (free instant key "
+              "at eia.gov/opendata/register.php)")
+        return False
+    import requests as rq
+    from datetime import datetime as dt, timedelta as td, timezone as tz
+    end = dt.now(tz.utc)
+    start = end - td(days=14)
+    ZONES = ["DOM", "ATSI", "AEP", "DAY", "DEOK", "PE", "PL", "PS", "JC",
+             "BC", "PEP", "DPL", "AE", "ME", "PN", "APS", "DUQ"]
+    base = [("api_key", key), ("frequency", "hourly"), ("data[0]", "value"),
+            ("facets[parent][]", "PJM"),
+            ("start", start.strftime("%Y-%m-%dT%H")),
+            ("end", end.strftime("%Y-%m-%dT%H")),
+            ("sort[0][column]", "period"), ("sort[0][direction]", "asc"),
+            ("length", 5000)] + [("facets[subba][]", z) for z in ZONES]
+    rows, offset = [], 0
+    try:
+        while True:
+            r = rq.get("https://api.eia.gov/v2/electricity/rto/"
+                       "region-sub-ba-data/data/",
+                       params=base + [("offset", offset)], timeout=90)
+            r.raise_for_status()
+            chunk = (r.json().get("response") or {}).get("data") or []
+            rows.extend(chunk)
+            if len(chunk) < 5000 or offset > 40000:
+                break
+            offset += 5000
+    except Exception as e:
+        print(f"[!] EIA demand failed (non-fatal): {e}")
+        return False
+    mid = (end - td(days=7)).strftime("%Y-%m-%dT%H")
+    agg = {}
+    for row in rows:
+        z = row.get("subba")
+        try:
+            v = float(row.get("value"))
+        except (TypeError, ValueError):
+            continue
+        half = "cur" if str(row.get("period", "")) >= mid else "prev"
+        a = agg.setdefault(z, {"cur": [0, 0], "prev": [0, 0],
+                               "name": row.get("subba-name") or z})
+        a[half][0] += v; a[half][1] += 1
+    zones = []
+    for z, a in agg.items():
+        cur = a["cur"][0] / a["cur"][1] if a["cur"][1] else None
+        prev = a["prev"][0] / a["prev"][1] if a["prev"][1] else None
+        if cur is None:
+            continue
+        zones.append({"zone": z, "name": a["name"], "avg_mw_7d": round(cur),
+                      "delta_pct": (round(100 * (cur - prev) / prev, 1)
+                                    if prev else None)})
+    zones.sort(key=lambda x: -(x["avg_mw_7d"] or 0))
+    with open(out_path, "w") as f:
+        json.dump({"generated_at": dt.now(tz.utc).isoformat(timespec="seconds"),
+                   "source": "EIA-930 (US public domain)", "zones": zones},
+                  f, separators=(",", ":"))
+    print(f"[i] EIA demand: {len(zones)} PJM subregions -> {out_path}")
+    return bool(zones)
+
+
 def fetch_pjm_flows(cfg, out_path):
     """Daily PJM Data Miner 2 pull: yesterday's day-ahead hourly zonal LMPs,
     averaged per zone with the congestion component split out. This is the
@@ -1819,8 +1952,14 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
         if _auto_layer_stale(ga_path) or _layer_pending(ga_path):
             fetch_grid_assets(cfg, regions, ga_path)
         fl_path = os.path.join(emit_dir, "pjm_flows.json")
-        if _auto_layer_stale(fl_path, max_age_hours=24):
+        if os.environ.get("PJM_API_KEY") and _auto_layer_stale(fl_path, max_age_hours=24):
             fetch_pjm_flows(cfg, fl_path)
+        ed_path = os.path.join(emit_dir, "eia_demand.json")
+        if _auto_layer_stale(ed_path, max_age_hours=24):
+            fetch_eia_demand(cfg, ed_path)
+        ny_path = os.path.join(emit_dir, "nyiso_flows.json")
+        if _auto_layer_stale(ny_path, max_age_hours=24):
+            fetch_nyiso_lmps(cfg, ny_path)
         _maybe_alert(emit_dir, emitted, cfg)
     print("[i] Snapshot classification:")
     for cls, n in sorted(counts.items(), key=lambda x: -x[1]):
@@ -1920,6 +2059,38 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
         json.dump({"days": days}, f, separators=(",", ":"))
     _emit_durations(emit_dir, hist_dir, days)
 
+    gj = {"type": "FeatureCollection",
+          "features": [{"type": "Feature",
+                        "geometry": {"type": "Point",
+                                     "coordinates": [r["lon"], r["lat"]]},
+                        "properties": {k: v for k, v in r.items()
+                                       if k not in ("lat", "lon")}}
+                       for r in records]}
+    with open(os.path.join(emit_dir, "latest.geojson"), "w") as f:
+        json.dump(gj, f, separators=(",", ":"))
+    try:
+        fair = sum(1 for r in records if not r.get("weather_flag"))
+        dcp = sum(1 for r in records if r.get("dc_flag"))
+        cust = sum(r.get("customers") or 0 for r in records)
+        title = (f"GRIDWATCH {polled_at[:16]}Z — {len(records)} outages, "
+                 f"{cust:,} customers, {fair} fair-weather, "
+                 f"{dcp} DC-proximate")
+        top = sorted(records, key=lambda r: -(r.get("customers") or 0))[:5]
+        desc = " | ".join(f"{r['region']}: {r.get('customers', 0)} cust "
+                          f"({r.get('classification', '')[:28]})"
+                          for r in top) or "quiet network"
+        item = ("<item><title>" + title + "</title><description>" + desc
+                + "</description><pubDate>" + polled_at + "</pubDate>"
+                + '<guid isPermaLink="false">' + polled_at + "</guid></item>")
+        with open(os.path.join(emit_dir, "feed.xml"), "w") as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">'
+                    '<channel><title>GRIDWATCH</title>'
+                    '<link>https://paradoxsnowman.github.io/gridwatch/</link>'
+                    '<description>Outages x weather x data center proximity, '
+                    'Midwest to Atlantic</description>' + item
+                    + '</channel></rss>')
+    except Exception as e:
+        print(f"[!] rss emit failed (non-fatal): {e}")
     # Copy the curated data layers next to the outage data so the static page
     # has a single data root. (Without this the map silently serves whatever
     # stale copy is already committed — edits to these files never appear.)
@@ -1934,13 +2105,14 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
           f"+ history/{day}.ndjson")
 
 
-def _emit_durations(emit_dir, hist_dir, days, window=7, poll_minutes=15):
+def _emit_durations(emit_dir, hist_dir, days, window=7, poll_minutes=None):
     """Restoration analytics from the last `window` days of observations:
     per-region average/median observed close-out time and momentary-event
     share (incidents seen in exactly one poll ~ resolved < poll interval).
     Observed span understates true duration by up to one interval on each
     end; we add half an interval as the standard correction and say so."""
     from statistics import median
+    all_ts = set()
     spans = {}  # key -> {first, last, region, customers, polls}
     for d in days[-window:]:
         p = os.path.join(hist_dir, f"{d['date']}.ndjson")
@@ -1955,6 +2127,7 @@ def _emit_durations(emit_dir, hist_dir, days, window=7, poll_minutes=15):
                         continue
                     k = f"{r.get('region')}|{r.get('outage_id')}"
                     t = r.get("polled_at", "")
+                    all_ts.add(t)
                     s = spans.setdefault(k, {"first": t, "last": t,
                                              "region": r.get("region"),
                                              "customers": r.get("customers") or 0,
@@ -1967,6 +2140,20 @@ def _emit_durations(emit_dir, hist_dir, days, window=7, poll_minutes=15):
                     s["customers"] = max(s["customers"], r.get("customers") or 0)
         except OSError:
             continue
+    if poll_minutes is None:
+        ts = sorted(all_ts)
+        gaps = []
+        for a, b in zip(ts, ts[1:]):
+            try:
+                g = (datetime.fromisoformat(b)
+                     - datetime.fromisoformat(a)).total_seconds() / 60
+                if 1 <= g <= 120:
+                    gaps.append(g)
+            except ValueError:
+                pass
+        gaps.sort()
+        poll_minutes = round(gaps[len(gaps)//2]) if gaps else 15
+        print(f"[i] durations: observed poll interval ~{poll_minutes} min")
     # exclude outages still active in the newest poll (not yet closed)
     newest = max((s["last"] for s in spans.values()), default="")
     by_region = {}

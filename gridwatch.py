@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+=#!/usr/bin/env python3
 """
 GRIDWATCH — FirstEnergy (Ohio) outage collector with weather + data center
 proximity correlation.
@@ -2134,6 +2134,36 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
                        for r in records]}
     with open(os.path.join(emit_dir, "latest.geojson"), "w") as f:
         json.dump(gj, f, separators=(",", ":"))
+    # weekly digest (regenerated when >6 days old) — publication cadence
+    dg_path = os.path.join(emit_dir, "digest.json")
+    digest = None
+    try:
+        with open(dg_path) as f:
+            digest = json.load(f)
+    except Exception:
+        pass
+    try:
+        stale = (digest is None or
+                 (datetime.now(timezone.utc)
+                  - datetime.fromisoformat(digest["generated_at"])).days >= 7)
+    except Exception:
+        stale = True
+    if stale and days:
+        wk = days[-7:]
+        digest = {"generated_at": datetime.now(timezone.utc).isoformat(
+                      timespec="seconds"),
+                  "week_ending": wk[-1]["date"], "days": len(wk),
+                  "unique_outages": sum(d["unique"] for d in wk),
+                  "fair": sum(d["fair"] for d in wk),
+                  "weather": sum(d["weather"] for d in wk),
+                  "customers": sum(d["customers"] for d in wk)}
+        if digest["unique_outages"]:
+            digest["fair_pct"] = round(100 * digest["fair"]
+                                       / digest["unique_outages"], 1)
+        with open(dg_path, "w") as f:
+            json.dump(digest, f, separators=(",", ":"))
+        print(f"[i] weekly digest regenerated (week ending "
+              f"{digest['week_ending']})")
     try:
         fair = sum(1 for r in records if not r.get("weather_flag"))
         dcp = sum(1 for r in records if r.get("dc_flag"))
@@ -2148,12 +2178,26 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
         item = ("<item><title>" + title + "</title><description>" + desc
                 + "</description><pubDate>" + polled_at + "</pubDate>"
                 + '<guid isPermaLink="false">' + polled_at + "</guid></item>")
+        ditem = ""
+        if digest:
+            ditem = ("<item><title>Weekly digest — week ending "
+                     + digest.get("week_ending", "?") + ": "
+                     + str(digest.get("unique_outages", 0)) + " outages, "
+                     + str(digest.get("fair_pct", "?"))
+                     + "% fair-weather</title><description>"
+                     + f"{digest.get('customers', 0):,} customers affected; "
+                     + str(digest.get("weather", 0)) + " weather-attributed vs "
+                     + str(digest.get("fair", 0)) + " fair-weather."
+                     + "</description><pubDate>"
+                     + digest.get("generated_at", "") + "</pubDate>"
+                     + '<guid isPermaLink="false">digest-'
+                     + digest.get("week_ending", "") + "</guid></item>")
         with open(os.path.join(emit_dir, "feed.xml"), "w") as f:
             f.write('<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">'
                     '<channel><title>GRIDWATCH</title>'
                     '<link>https://paradoxsnowman.github.io/gridwatch/</link>'
                     '<description>Outages x weather x data center proximity, '
-                    'Midwest to Atlantic</description>' + item
+                    'Midwest to Atlantic</description>' + item + ditem
                     + '</channel></rss>')
     except Exception as e:
         print(f"[!] rss emit failed (non-fatal): {e}")

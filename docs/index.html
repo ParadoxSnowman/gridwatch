@@ -132,6 +132,7 @@
     </div>
 
     <div id="tab-history" style="display:none">
+      <div class="card"><h2>This week</h2><div id="digestcard" class="meta">—</div></div>
       <div class="card"><h2>Customers affected — last 14 days</h2>
         <svg id="spark" width="100%" height="56" preserveAspectRatio="none"></svg>
         <div class="meta" id="sparkmeta"></div></div>
@@ -206,6 +207,8 @@
       <div class="card" id="eiawrap" style="display:none">
         <h2>Zone demand — EIA-930 (public domain)</h2>
         <div id="eiacard"></div></div>
+      <div class="card" id="nywrap" style="display:none">
+        <h2>NYISO zone prices — public, no key</h2><div id="nycard"></div></div>
       <div class="card" id="flowswrap" style="display:none">
         <h2>PJM zonal prices — the flows layer</h2>
         <div id="flowscard"></div></div>
@@ -246,7 +249,7 @@ const COLORS = {
   "UNEXPLAINED FAIR-WEATHER": "#f59e0b",
   "NEAR OPERATING DC FAIR-WEATHER (context)": "#ec4899",
 };
-const REFRESH_MS = 5*60*1000;
+const REFRESH_MS = 2*60*1000;
 const map = L.map("map").setView([40.7,-82.4], 7);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
   {attribution:"&copy; OSM &copy; CARTO",maxZoom:18}).addTo(map);
@@ -380,47 +383,54 @@ function isContext(s){return String(s.coverage||"").startsWith("context");}
 const radarFallback=L.tileLayer(
   "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png",
   {opacity:.55,attribution:"NEXRAD / Iowa State Mesonet"});
-let radarOn=false,radarFrames=[],radarLayers={},radarIdx=0,radarTimer=null,radarBtn=null,radarClock=null;
+let radarOn=false,radarFrames=[],radarLayers=[],radarIdx=0,radarTimer=null,radarBtn=null,radarClock=null;
 async function radarStart(){
+  if(radarClock) radarClock.textContent="loading…";
   try{
     const j=await fetch("https://api.rainviewer.com/public/weather-maps.json").then(r=>r.json());
-    radarFrames=(j.radar&&j.radar.past||[]).slice(-8);
+    radarFrames=(j.radar&&j.radar.past||[]).slice(-6);
     if(!radarFrames.length) throw 0;
-    radarIdx=radarFrames.length-1;
-    radarTick(); radarTimer=setInterval(radarTick,700);
-  }catch(e){ map.addLayer(radarFallback); if(radarClock) radarClock.textContent="live"; }
-}
-function radarTick(){
-  const f=radarFrames[radarIdx];
-  if(!radarLayers[f.time]){
-    radarLayers[f.time]=L.tileLayer(
+    radarLayers=radarFrames.map(f=>L.tileLayer(
       "https://tilecache.rainviewer.com"+f.path+"/256/{z}/{x}/{y}/2/1_1.png",
-      {opacity:0,attribution:"RainViewer"});
+      {opacity:0,attribution:"RainViewer"}));
+    const loads=radarLayers.map(l=>new Promise(res=>{
+      let done=false; l.once("load",()=>{if(!done){done=true;res();}});
+      setTimeout(()=>{if(!done){done=true;res();}},4000);
+      l.addTo(map);}));
+    await Promise.all(loads);
+    if(!radarOn) return;
+    radarIdx=radarLayers.length-1;
+    radarStep();
+  }catch(e){
+    map.addLayer(radarFallback);
+    if(radarClock) radarClock.textContent="live";
   }
-  for(const t in radarLayers){
-    if(!map.hasLayer(radarLayers[t])) map.addLayer(radarLayers[t]);
-    radarLayers[t].setOpacity(+t===f.time?0.6:0);
-  }
+}
+function radarStep(){
+  if(!radarOn||!radarLayers.length) return;
+  radarLayers.forEach((l,i)=>l.setOpacity(i===radarIdx?0.6:0));
   if(radarClock){
-    const d=new Date(f.time*1000);
-    radarClock.textContent=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+    const d=new Date(radarFrames[radarIdx].time*1000);
+    radarClock.textContent=String(d.getHours()).padStart(2,"0")+":"+
+      String(d.getMinutes()).padStart(2,"0");
   }
-  radarIdx=(radarIdx+1)%radarFrames.length;
+  const dwell=radarIdx===radarLayers.length-1?2000:800;
+  radarIdx=(radarIdx+1)%radarLayers.length;
+  radarTimer=setTimeout(radarStep,dwell);
 }
 function radarStop(){
-  if(radarTimer){clearInterval(radarTimer);radarTimer=null;}
-  for(const t in radarLayers) map.removeLayer(radarLayers[t]);
-  radarLayers={}; radarFrames=[];
+  if(radarTimer){clearTimeout(radarTimer);radarTimer=null;}
+  radarLayers.forEach(l=>map.removeLayer(l));
+  radarLayers=[];radarFrames=[];
   if(map.hasLayer(radarFallback)) map.removeLayer(radarFallback);
   if(radarClock) radarClock.textContent="";
 }
 function drawRadar(){
-  const C=L.control?L.Control:null;
   const div=document.createElement("div");
   div.style.cssText="position:absolute;top:12px;right:12px;z-index:1000;display:flex;gap:6px;align-items:center";
   div.innerHTML=`<button id="radarbtn" style="padding:5px 12px;border-radius:18px;font-size:12px;
     background:var(--panel);border:1px solid var(--line);color:var(--text);cursor:pointer">
-    🌧 radar</button><span id="radarclock" class="meta" style="min-width:38px"></span>`;
+    🌧 radar</button><span id="radarclock" class="meta" style="min-width:52px"></span>`;
   const mapEl=document.getElementById("map");
   if(mapEl&&mapEl.parentElement){
     mapEl.parentElement.style.position="relative";
@@ -546,7 +556,35 @@ function renderNYFlows(){
     <div class="caveat">NYISO public data — freely redistributable, unlike PJM's.
     The persistent spread is the price signal pulling load upstate.</div>`;
 }
-let EIAD=null,STRAIN=null;
+let EIAD=null,STRAIN=null,NYF=null,DIGEST=null;
+function renderNyiso(){
+  const el=document.getElementById("nycard"),wrap=document.getElementById("nywrap");
+  if(!el||!wrap) return;
+  if(!NYF||!(NYF.zones||[]).length){wrap.style.display="none";return;}
+  wrap.style.display="";
+  const rows=NYF.zones.map(z=>`<tr${z.zone==="WEST"?' style="color:var(--red)"':''}>
+    <td>${esc(z.zone)}</td><td class="n">$${z.avg_lmp}</td>
+    <td class="n">$${z.avg_congestion}</td></tr>`).join("");
+  const sp=NYF.nyc_minus_west!=null?NYF.nyc_minus_west:
+           (NYF.spread!=null?NYF.spread:null);
+  el.innerHTML=`<div class="meta">Day-ahead zonal LBMP averages${NYF.day?", "+esc(String(NYF.day)):""}.
+    WEST (red) hosts TeraWulf Lake Mariner — cheap upstate power is WHY the
+    campus is there.${sp!=null?` <b>NYC − WEST spread: $${sp}/MWh</b>.`:""}
+    Source: NYISO public CSVs.</div>
+    <table><thead><tr><th>zone</th><th class="n">avg LBMP</th>
+    <th class="n">congestion</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function renderDigest(){
+  const el=document.getElementById("digestcard");
+  if(!el) return;
+  if(!DIGEST){el.parentElement.style.display="none";return;}
+  el.parentElement.style.display="";
+  el.innerHTML=`week ending <b>${esc(DIGEST.week_ending||"?")}</b> —
+    <b>${fmt(DIGEST.unique_outages||0)}</b> outages,
+    <b>${DIGEST.fair_pct!=null?DIGEST.fair_pct+"%":"—"}</b> fair-weather,
+    ${fmt(DIGEST.customers||0)} customers affected
+    (${DIGEST.weather||0} weather vs ${DIGEST.fair||0} fair).`;
+}
 function renderStrain(){
   const el=document.getElementById("straincard"), wrap=document.getElementById("strainwrap");
   if(!el||!wrap) return;
@@ -747,10 +785,24 @@ async function loadEvidence(windowDays){
   }
   const cmp=document.getElementById("ctl-compare");
   if(cmp){
-    const pc=(f,t)=>t?(100*f/t).toFixed(0)+"%":"—";
-    cmp.innerHTML=`Fair-weather share — <b>active sites ${pc(aF,aT)}</b> (${aF}/${aT})
-      vs <b>controls ${pc(cF,cT)}</b> (${cF}/${cT}). If these match, the signal
-      is "growth corridor", not "data center".`;
+    const wilson=(f,n)=>{if(!n)return null;const p=f/n,z=1.96,d=1+z*z/n;
+      const c=(p+z*z/(2*n))/d,m=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/d;
+      return [Math.max(0,c-m),Math.min(1,c+m)];};
+    const pc=x=>(100*x).toFixed(0)+"%";
+    const a=wilson(aF,aT), c=wilson(cF,cT);
+    let verdict="accumulating — too little data to compare yet";
+    if(a&&c){
+      const overlap=a[0]<=c[1]&&c[0]<=a[1];
+      verdict=overlap
+        ?"intervals overlap: <b>not yet statistically distinguishable</b> — keep collecting"
+        :"intervals separate: <b>distinguishable at ~95% confidence</b>";
+    }
+    cmp.innerHTML=`Fair-weather share — <b>active sites ${aT?pc(aF/aT):"—"}</b>
+      ${a?`[${pc(a[0])}–${pc(a[1])}]`:""} (${aF}/${aT})
+      vs <b>controls ${cT?pc(cF/cT):"—"}</b>
+      ${c?`[${pc(c[0])}–${pc(c[1])}]`:""} (${cF}/${cT}).
+      ${verdict}. 95% Wilson intervals; matching shares mean "growth corridor",
+      not "data center".`;
   }
   const order=s=>ACTIVE2.has(s)?0:s==="control"?1:2;
   rows.sort((a,b)=>order(a[1].status)-order(b[1].status)||b[1].f-a[1].f)
@@ -839,7 +891,15 @@ async function refetchNow(){
   const b=document.getElementById("refetch"); if(b){b.disabled=true;b.textContent="…";}
   const prev=LATEST&&LATEST.generated_at;
   try{
-    const latest=await fetch("data/latest.json?t="+Date.now()).then(r=>r.json());
+    const host=location.hostname.split(".")[0];
+    const repo=location.pathname.split("/").filter(Boolean)[0]||"gridwatch";
+    let latest=null;
+    try{
+      latest=await fetch(`https://raw.githubusercontent.com/${host}/${repo}/main/docs/data/latest.json?t=`+Date.now(),
+        {cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json();});
+    }catch(e){
+      latest=await fetch("data/latest.json?t="+Date.now()).then(r=>r.json());
+    }
     const changed=latest.generated_at!==prev;
     LATEST=latest;
     if(b){b.textContent=changed?"✓ updated":"✓ no new poll yet";
@@ -877,6 +937,8 @@ async function boot(){
   try{FLOWS=await fetch("data/pjm_flows.json").then(r=>r.json());}catch(e){FLOWS=null;}
   try{EIAD=await fetch("data/eia_demand.json").then(r=>r.json());}catch(e){EIAD=null;}
   try{STRAIN=await fetch("data/eia_strain.json").then(r=>r.json());}catch(e){STRAIN=null;}
+  try{NYF=await fetch("data/nyiso_flows.json").then(r=>r.json());}catch(e){NYF=null;}
+  try{DIGEST=await fetch("data/digest.json").then(r=>r.json());}catch(e){DIGEST=null;}
   try{NYFLOWS=await fetch("data/nyiso_flows.json?t="+Date.now()).then(r=>r.json());}catch(e){NYFLOWS=null;}
   const fl=(latest.feeds||[]).filter(f=>!f.error).length;
   if(fl) document.getElementById("tagline").innerHTML=
@@ -908,7 +970,7 @@ async function boot(){
     .map(d=>`<option value="${d.date}">${d.date} (${d.unique??d.records})</option>`).join("")
     ||"<option>— none —</option>";
   document.getElementById("loadday").onclick=()=>loadHistDay(document.getElementById("daysel").value);
-  timeline();sparkline();renderStates();renderClassbar();renderWatch();renderFlows();renderEia();renderStrain();renderNYFlows();
+  timeline();sparkline();renderStates();renderClassbar();renderWatch();renderFlows();renderEia();renderStrain();renderNyiso();renderDigest();renderNYFlows();
   loadEvidence(30);
   const rb=document.getElementById("refetch"); if(rb) rb.onclick=refetchNow;
   try{ renderDurations(await fetch("data/durations.json?t="+Date.now()).then(r=>r.json())); }catch(e){}

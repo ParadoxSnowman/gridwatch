@@ -225,6 +225,8 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
 <!-- ============ EVIDENCE ============ -->
 <div id="tab-evidence" style="display:none">
   <div class="verdict nosig" id="ctl-compare">accumulating…</div>
+  <div class="card" id="pipelinewrap" style="display:none"><h2>Pipeline & reuse signals</h2>
+    <div id="pipelinecard"></div></div>
   <div class="card"><h2>Per-site scorecard — 30 days</h2>
     <div class="meta" style="margin-bottom:10px">Fair-weather outages inside each active site's ring.
       One snapshot is noise; the pattern over weeks is the evidence. Null results publish too.</div>
@@ -282,7 +284,8 @@ const outLayer=L.layerGroup().addTo(map),
       autoLayer=L.layerGroup(),
       infraLayer=L.layerGroup().addTo(map),
       subLayer=L.layerGroup(),plantLayer=L.layerGroup(),
-      bbLayers={hi:L.layerGroup(),mid:L.layerGroup(),lo:L.layerGroup()};
+      bbLayers={hi:L.layerGroup(),mid:L.layerGroup(),lo:L.layerGroup()},
+      queueLayer=L.layerGroup(),retireLayer=L.layerGroup(),alertLayer=L.layerGroup();
 
 const CLASSCOLOR=r=>r.dc_flag?"var(--red)":
   String(r.classification||"").startsWith("NEAR OPERATING")?"var(--pink)":
@@ -445,6 +448,45 @@ function buildSideRows(){
         ${p.output?`<div class="pop-r"><span>output</span><b>${esc(p.output)}</b></div>`:""}
         <div class="meta" style="margin-top:4px">generation near a DC site — proximity to supply
         is often WHY the site was chosen</div>`).addTo(plantLayer);});
+  if(ALERTS&&(ALERTS.features||[]).length){
+    addRow("NWS warnings/watches","#eab308",ALERTS.features.length,alertLayer,()=>{
+      for(const ft of ALERTS.features){
+        try{L.geoJSON(ft,{style:{color:"#eab308",weight:1,fillColor:"#eab308",
+          fillOpacity:.12,dashArray:"4 4"}})
+          .bindPopup(`<div class="pop-t">⚠ ${esc(ft.properties.event)}</div>
+            <div class="meta">${esc(ft.properties.headline||"")}</div>`)
+          .addTo(alertLayer);}catch(e){}}
+    },false);
+  }
+  if(QUEUE.length){
+    addRow("PJM queue (near sites)","#22d3ee",QUEUE.length,queueLayer,()=>{
+      for(const q of QUEUE){
+        L.circleMarker([q.lat,q.lon],{radius:5,color:"#22d3ee",fillColor:"#0e7490",
+          fillOpacity:.85,weight:1.5})
+          .bindPopup(`<div class="pop-t">⧗ ${esc(q.name)} — ${fmt(q.mw)} MW</div>
+            <div class="pop-r"><span>fuel</span><b>${esc(q.fuel||"?")}</b></div>
+            <div class="pop-r"><span>status</span><b>${esc(q.status||"?")}</b></div>
+            <div class="pop-r"><span>near</span><b>${esc(q.near_site)} (${q.near_km} km)</b></div>
+            <div class="meta" style="margin-top:4px">interconnection request —
+            a grid-connection filing, often before construction is visible</div>`)
+          .addTo(queueLayer);}
+    },false);
+  }
+  if(RETIRE.length){
+    const flagged=RETIRE.filter(p=>p.near_site);
+    addRow("Retired plants (near sites)","#94a3b8",flagged.length||RETIRE.length,retireLayer,()=>{
+      for(const p of RETIRE){
+        const fl=!!p.near_site;
+        L.circleMarker([p.lat,p.lon],{radius:fl?6:3,color:fl?"#f87171":"#64748b",
+          fillColor:fl?"#7f1d1d":"#334155",fillOpacity:.8,weight:fl?2:1})
+          .bindPopup(`<div class="pop-t">✖ ${esc(p.name)} — ${fmt(p.mw)} MW ${esc(p.fuel||"")}</div>
+            <div class="pop-r"><span>status</span><b>${esc(p.status)}</b></div>
+            ${p.near_site?`<div class="pop-r"><span>near</span><b>${esc(p.near_site)} (${p.near_km} km)</b></div>
+            <div class="meta" style="margin-top:4px">retired plant near a data center site —
+            campuses often reuse the dead plant's interconnection rights</div>`:""}`)
+          .addTo(retireLayer);}
+    },false);
+  }
   // filter box
   const f=document.getElementById("sitefilter");
   f.oninput=()=>{const q=f.value.toLowerCase();
@@ -756,6 +798,30 @@ async function loadEvidence(days){
 }
 
 /* ================= burden ================= */
+function renderPipeline(){
+  const el=document.getElementById("pipelinecard"),wrap=document.getElementById("pipelinewrap");
+  if(!el||!wrap) return;
+  const q=QUEUE||[], rf=(RETIRE||[]).filter(p=>p.near_site);
+  if(!q.length&&!rf.length){wrap.style.display="none";return;}
+  wrap.style.display="";
+  const qMW=q.reduce((a,x)=>a+(x.mw||0),0);
+  let html=`<div class="meta" style="margin-bottom:8px">Forward-looking + reuse
+    signals within 15 km of tracked sites. Queue = what's coming; retired plants =
+    interconnection rights a campus can inherit.</div>`;
+  if(q.length){
+    html+=`<div style="margin-bottom:6px"><span class="badge b-green">queue</span>
+      <b>${q.length}</b> interconnection requests · <b>${fmt(qMW)} MW</b> total near sites</div>`;
+    html+=q.slice(0,6).map(x=>`<div class="longrow"><span>${esc(x.near_site)} —
+      ${esc(x.fuel||"?")} ${esc(x.status||"")}</span><b>${fmt(x.mw)} MW · ${x.near_km}km</b></div>`).join("");
+  }
+  if(rf.length){
+    html+=`<div style="margin:10px 0 6px"><span class="badge b-red">reuse</span>
+      <b>${rf.length}</b> retired plants beside tracked sites</div>`;
+    html+=rf.slice(0,6).map(p=>`<div class="longrow"><span>${esc(p.name)} →
+      ${esc(p.near_site)}</span><b>${fmt(p.mw)} MW · ${p.near_km}km</b></div>`).join("");
+  }
+  el.innerHTML=html;
+}
 function renderNyiso(){
   const el=document.getElementById("nycard"),wrap=document.getElementById("nywrap");
   if(!el||!wrap) return;
@@ -914,12 +980,15 @@ document.addEventListener("keydown",e=>{
   try{STRAIN=await fetch("data/eia_strain.json").then(r=>r.json());}catch(e){}
   try{NYF=await fetch("data/nyiso_flows.json").then(r=>r.json());}catch(e){}
   try{DIGEST=await fetch("data/digest.json").then(r=>r.json());}catch(e){}
+  try{QUEUE=(await fetch("data/queue.json").then(r=>r.json())).requests||[];}catch(e){QUEUE=[];}
+  try{RETIRE=(await fetch("data/retirements.json").then(r=>r.json())).plants||[];}catch(e){RETIRE=[];}
+  try{ALERTS=await fetch("data/alerts.geojson").then(r=>r.json());}catch(e){ALERTS=null;}
 
   drawDCs();drawInfra();buildSideRows();wireRadar();
   plot();kpis();mixbar();renderFeeds();renderStates();topEvents();regionChips();
   sparkline();timeline();renderDurations();renderDigest();
   renderStrain();renderNyiso();renderEia();renderFlows();renderWatch();renderBurden();
-  loadEvidence(30);
+  renderPipeline();loadEvidence(30);
   ageTick();setInterval(ageTick,30000);
   siteDeepLink();window.addEventListener("hashchange",siteDeepLink);
   setTimeout(refresh,REFRESH_MS);

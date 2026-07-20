@@ -1892,15 +1892,33 @@ def fetch_eia_strain(cfg, out_path):
             v = float(row.get("value"))
         except (TypeError, ValueError):
             continue
+        if v <= 0:                       # EIA uses 0/negatives for missing hrs
+            continue
         series.setdefault(ba, {}).setdefault(per, {})[typ] = v
+    # EIA revises actual demand (D) for the most recent hours; the trailing
+    # edge is preliminary and reads LOW, which inflates DF/D-style ratios and
+    # also makes a few hours spike. Drop the newest SETTLE_LAG hours so every
+    # ratio compares a settled actual against its own-hour forecast, and clamp
+    # to a sane band so one bad pair can't post a fake "111%".
+    SETTLE_LAG = 4
     bas = []
     for ba, byper in series.items():
-        ratios = []
-        for per in sorted(byper):
+        pers = sorted(byper)
+        if len(pers) > SETTLE_LAG:
+            pers = pers[:-SETTLE_LAG]
+        ratios, dropped = [], 0
+        for per in pers:
             d, f = byper[per].get("D"), byper[per].get("DF")
-            if d and f:
-                ratios.append((per, 100.0 * d / f))
-        if not ratios:
+            if not (d and f):
+                continue
+            pct = 100.0 * d / f
+            if pct < 40 or pct > 140:    # implausible: missing/mismatched pair
+                dropped += 1
+                continue
+            ratios.append((per, pct))
+        if len(ratios) < 6:              # too little settled data to judge
+            print(f"[i] EIA strain [{ba}]: only {len(ratios)} settled hours "
+                  f"({dropped} implausible dropped) — skipping")
             continue
         recent = ratios[-48:]
         peak = max(recent, key=lambda x: x[1])
@@ -1909,7 +1927,11 @@ def fetch_eia_strain(cfg, out_path):
                     "latest_period": recent[-1][0],
                     "max48_pct": round(peak[1], 1),
                     "peak_period": peak[0],
-                    "hours_ge98": sum(1 for _, p in recent if p >= 98.0)})
+                    "hours_ge98": sum(1 for _, p in recent if p >= 98.0),
+                    "settled_hours": len(recent)})
+        if dropped:
+            print(f"[i] EIA strain [{ba}]: {dropped} implausible pairs dropped, "
+                  f"{len(recent)} settled hours kept")
     bas.sort(key=lambda x: -x["max48_pct"])
     with open(out_path, "w") as f:
         json.dump({"generated_at": dt.now(tz.utc).isoformat(timespec="seconds"),

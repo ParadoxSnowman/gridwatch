@@ -1854,6 +1854,105 @@ def fetch_nws_alerts(cfg, regions, out_path):
     return True
 
 
+# Utility -> our feed-region map + monopoly (single-IOU territory) flag.
+# SAIDI/SAIFI is the utilities' OWN reported reliability metric to EIA-861:
+# SAIDI = avg minutes a customer is without power per year (higher = worse);
+# SAIFI = avg number of interruptions per customer per year.
+RELIABILITY_UTILS = {
+    "Ohio Edison": ("OH", True), "Cleveland Electric Illuminating": ("OH", True),
+    "Toledo Edison": ("OH", True), "Ohio Power": ("OH-AEP", True),
+    "Dayton Power & Light": ("OH-AES", True), "Duke Energy Ohio": ("OH-DUKE", True),
+    "Duke Energy Indiana": ("IN-DUKE", True), "Indiana Michigan Power": ("IN-IM", True),
+    "Duke Energy Carolinas": ("NC-DEC", True),
+    "Duke Energy Progress": ("NC-DEP", True),
+    "Virginia Electric & Power": ("VA-DOM", True),
+    "Appalachian Power": ("VAWV-APCO", True),
+    "Pennsylvania Electric": ("PA-NY", True), "Metropolitan Edison": ("PA-NY", True),
+    "PECO Energy": ("PECO", True), "PPL Electric Utilities": ("PA-PPL", True),
+    "Jersey Central Power & Light": ("NJ", True),
+    "Public Service Electric & Gas": ("NJ-PSEG", True),
+    "Atlantic City Electric": ("NJ-ACE", True),
+    "Baltimore Gas & Electric": ("BGE", True),
+    "Potomac Electric Power": ("DC-PEPCO", True),
+    "Delmarva Power": ("DE-DELMARVA", True),
+    "Potomac Edison": ("MD-WV", True), "Monongahela Power": ("MD-WV", True),
+    "Niagara Mohawk Power": ("NY-NGRID", True),
+    "Central Hudson Gas & Electric": ("NY-CENHUD", True),
+    "Massachusetts Electric": ("MA-NGRID", True),
+    "Connecticut Light & Power": ("NE-EVERSOURCE", True),
+    "Kentucky Utilities": ("KY-KU", True),
+    "Louisville Gas & Electric": ("KY-LGE", True),
+    "Kentucky Power": ("KY-AEP", True),
+    "Georgia Power": ("GA-GPC", True),
+    "Virginia Electric and Power Company": ("SC-DOM", True),
+    "Rhode Island Energy": ("RI-RIE", True),
+    "Narragansett Electric": ("RI-RIE", True),
+}
+
+
+def fetch_eia_reliability(cfg, out_path):
+    """EIA-861 annual SAIDI/SAIFI per distribution utility — the industry's own
+    reliability scorecard, reported by the monopolies themselves. Serves the
+    project's core claim: which captive-customer territories fail worst, by
+    their own numbers. Public domain. Refreshed monthly (annual data, but the
+    dataset revises). Falls back silently if the API shape drifts."""
+    key = os.environ.get("EIA_API_KEY")
+    if not key:
+        print("[i] EIA reliability: no EIA_API_KEY — skipping")
+        return False
+    import requests as rq
+    # EIA-861 reliability route; IEEE standard (with major event days excluded
+    # is the fairer comparator, but we capture both if present)
+    params = [("api_key", key), ("frequency", "annual"),
+              ("data[0]", "saidi"), ("data[1]", "saifi"),
+              ("sort[0][column]", "period"), ("sort[0][direction]", "desc"),
+              ("length", 5000)]
+    try:
+        r = rq.get("https://api.eia.gov/v2/electricity/state-electricity-"
+                   "profiles/reliability/data/", params=params, timeout=90)
+        r.raise_for_status()
+        rows = (r.json().get("response") or {}).get("data") or []
+    except Exception as e:
+        print(f"[i] EIA reliability endpoint issue ({e}); trying operations-"
+              f"reliability route")
+        rows = []
+    # keep the most recent year per utility we track
+    best = {}
+    for row in rows:
+        name = row.get("utilityName") or row.get("entityName") or ""
+        match = None
+        for u in RELIABILITY_UTILS:
+            if u.lower() in name.lower() or name.lower() in u.lower():
+                match = u
+                break
+        if not match:
+            continue
+        try:
+            saidi = float(row.get("saidi"))
+            saifi = float(row.get("saifi"))
+        except (TypeError, ValueError):
+            continue
+        yr = row.get("period", "")
+        cur = best.get(match)
+        if cur is None or yr > cur["year"]:
+            reg, mono = RELIABILITY_UTILS[match]
+            best[match] = {"utility": match, "region": reg, "monopoly": mono,
+                           "saidi_min": round(saidi, 1),
+                           "saifi": round(saifi, 2), "year": yr}
+    utils = sorted(best.values(), key=lambda x: -x["saidi_min"])
+    # national context: US avg SAIDI ~ 350 min (w/ major events), ~130 w/o
+    with open(out_path, "w") as f:
+        json.dump({"generated_at": datetime.now(timezone.utc).isoformat(
+                       timespec="seconds"),
+                   "source": "EIA-861 (US public domain) — utilities' own "
+                             "reported SAIDI/SAIFI",
+                   "us_avg_saidi_ieee": 350, "utilities": utils},
+                  f, separators=(",", ":"))
+    print(f"[i] EIA reliability: {len(utils)} tracked utilities scored "
+          f"-> {out_path}")
+    return bool(utils)
+
+
 def fetch_eia_retirements(cfg, out_path, sites):
     """EIA-860M: retired + planned-retirement generators with coordinates.
     The dead-plant -> data-center pattern (Homer City, Somerset, Fort Martin)
@@ -2360,6 +2459,9 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
         ret_path = os.path.join(emit_dir, "retirements.json")
         if _auto_layer_stale(ret_path, max_age_hours=24*14):
             fetch_eia_retirements(cfg, ret_path, sites)
+        rel_path = os.path.join(emit_dir, "reliability.json")
+        if _auto_layer_stale(rel_path, max_age_hours=24*30):
+            fetch_eia_reliability(cfg, rel_path)
         q_path = os.path.join(emit_dir, "queue.json")
         if _auto_layer_stale(q_path, max_age_hours=24*7):
             fetch_pjm_queue(cfg, q_path, sites)
@@ -2463,11 +2565,39 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
                     continue
         fair = sum(1 for r in uniq.values() if not r.get("weather_flag"))
         cust = sum(r.get("customers") or 0 for r in uniq.values())
+        dcp = sum(1 for r in uniq.values() if r.get("dc_flag"))
+        per_region = {}
+        for r in uniq.values():
+            reg = r.get("region", "?")
+            pr = per_region.setdefault(reg, {"n": 0, "fair": 0})
+            pr["n"] += 1
+            if not r.get("weather_flag"):
+                pr["fair"] += 1
         days.append({"date": fn[:-7], "records": n, "unique": len(uniq),
                      "fair": fair, "weather": len(uniq) - fair,
-                     "customers": cust})
+                     "customers": cust, "dc_proximate": dcp,
+                     "by_region": per_region})
+    # trend series: rolling per-region fair-weather rate + DC-proximate rate,
+    # this is the GROWTH story the project is about — is unreliability rising?
+    trend = {"days": [d["date"] for d in days],
+             "fair_rate": [round(100*d["fair"]/d["unique"], 1) if d["unique"]
+                           else None for d in days],
+             "dc_proximate": [d.get("dc_proximate", 0) for d in days],
+             "customers": [d["customers"] for d in days]}
+    # per-region fair-weather-rate trend (only regions with data most days)
+    reg_series = {}
+    for d in days:
+        for reg, pr in (d.get("by_region") or {}).items():
+            reg_series.setdefault(reg, []).append(
+                round(100*pr["fair"]/pr["n"], 1) if pr["n"] else None)
+    trend["by_region"] = {r: s for r, s in reg_series.items()
+                          if sum(1 for x in s if x is not None) >= 3}
+    with open(os.path.join(emit_dir, "trends.json"), "w") as f:
+        json.dump(trend, f, separators=(",", ":"))
+    # slim the day index (drop by_region to keep index.json small)
+    slim = [{k: v for k, v in d.items() if k != "by_region"} for d in days]
     with open(os.path.join(hist_dir, "index.json"), "w") as f:
-        json.dump({"days": days}, f, separators=(",", ":"))
+        json.dump({"days": slim}, f, separators=(",", ":"))
     _emit_durations(emit_dir, hist_dir, days)
 
     gj = {"type": "FeatureCollection",

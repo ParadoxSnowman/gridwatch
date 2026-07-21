@@ -164,6 +164,7 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
     <div class="tab" data-tab="history">History</div>
     <div class="tab" data-tab="evidence">Evidence</div>
     <div class="tab" data-tab="burden">Burden</div>
+    <a class="tab" href="about.html" style="text-decoration:none">Methodology ↗</a>
   </nav>
 </header>
 
@@ -205,6 +206,13 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
 <!-- ============ HISTORY ============ -->
 <div id="tab-history" style="display:none">
   <div class="card"><h2>This week</h2><div id="digestcard" class="meta">—</div></div>
+  <div class="card" id="reliabwrap" style="display:none">
+    <h2>Monopoly reliability — utilities' own SAIDI/SAIFI (EIA-861)</h2>
+    <div id="reliabcard"></div></div>
+  <div class="card" id="trendwrap" style="display:none">
+    <h2>Reliability trend — is fair-weather failure rising?</h2>
+    <svg id="trendsvg" class="spark" style="height:120px"></svg>
+    <div class="meta" id="trendmeta"></div></div>
   <div class="grid">
     <div>
       <div class="card"><h2>Customers affected — last 14 days</h2>
@@ -267,6 +275,7 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
 const REFRESH_MS = 2*60*1000;
 let LATEST=null,PREV=null,INDEX={},DUR=null,DCS=[],AUTO=[],INFRA=[],BURDEN=null,
     FLOWS=null,EIAD=null,STRAIN=null,NYF=null,DIGEST=null,
+    QUEUE=[],RETIRE=[],ALERTS=null,RELIAB=null,TRENDS=null,
     PL_SUBS=[],PL_PLANTS=[],BACKBONE=[],
     activeRegions=new Set(),currentView="live";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -798,6 +807,51 @@ async function loadEvidence(days){
 }
 
 /* ================= burden ================= */
+function renderReliability(){
+  const el=document.getElementById("reliabcard"),wrap=document.getElementById("reliabwrap");
+  if(!el||!wrap) return;
+  if(!RELIAB||!(RELIAB.utilities||[]).length){wrap.style.display="none";return;}
+  wrap.style.display="";
+  const avg=RELIAB.us_avg_saidi_ieee||350;
+  const max=Math.max(...RELIAB.utilities.map(u=>u.saidi_min),avg);
+  const rows=RELIAB.utilities.map(u=>{
+    const worse=u.saidi_min>avg, col=worse?"var(--red)":"var(--green)";
+    return `<tr><td>${esc(u.utility)}<div class="meta">${esc(u.region)} · ${esc(u.year)}
+      ${u.monopoly?'· <span class="badge b-red">sole provider</span>':""}</div>
+      <div class="statebar" style="width:${Math.max(3,100*u.saidi_min/max)}%;background:${col}"></div></td>
+      <td class="n" style="color:${col}"><b>${fmt(u.saidi_min)}</b> min</td>
+      <td class="n">${u.saifi}</td></tr>`;}).join("");
+  el.innerHTML=`<div class="meta" style="margin-bottom:8px">Minutes per year the average customer
+    spends without power (SAIDI) and interruptions per customer (SAIFI), as each monopoly reports to
+    the US EIA. Red = worse than the US average (~${avg} min). The utilities' OWN numbers, worst-first.</div>
+    <table><thead><tr><th>utility (territory)</th><th class="n">SAIDI</th>
+    <th class="n">SAIFI</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="caveat">EIA-861, most recent reported year per utility.</div>`;
+}
+function renderTrends(){
+  const svg=document.getElementById("trendsvg"),wrap=document.getElementById("trendwrap"),
+        meta=document.getElementById("trendmeta");
+  if(!svg||!wrap) return;
+  const t=TRENDS;
+  if(!t||!(t.days||[]).length||t.days.length<3){wrap.style.display="none";return;}
+  wrap.style.display="";
+  const days=t.days, fr=t.fair_rate||[], dc=t.dc_proximate||[];
+  const W=600,H=120,pad=6, xs=i=>pad+i/(days.length-1||1)*(W-2*pad);
+  const frPts=fr.map((v,i)=>v==null?null:`${xs(i)},${H-pad-(v/100)*(H-2*pad)}`).filter(Boolean).join(" ");
+  const dcMax=Math.max(...dc,1);
+  const dcBars=dc.map((v,i)=>{const bw=(W-2*pad)/days.length, h=(v/dcMax)*(H-2*pad)*0.5;
+    return `<rect x="${xs(i)-bw/2+1}" y="${H-pad-h}" width="${Math.max(1,bw-2)}" height="${h}"
+      fill="#ff5c5c" opacity=".45"/>`;}).join("");
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  svg.innerHTML=dcBars+`<polyline points="${frPts}" fill="none" stroke="#f5a623" stroke-width="2"/>`+
+    `<line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="var(--line)"/>`;
+  const first=fr.find(x=>x!=null), last=[...fr].reverse().find(x=>x!=null);
+  const dir=(first!=null&&last!=null)?(last>first?"rising":last<first?"falling":"flat"):"—";
+  meta.innerHTML=`<b style="color:#f5a623">amber</b> = fair-weather share of outages (%);
+    <b style="color:#ff5c5c">red bars</b> = outages near active DC sites/day, over ${days.length} days.
+    Fair-weather share is <b>${dir}</b> (${first!=null?first+"%":"—"} → ${last!=null?last+"%":"—"}).
+    Rising amber = unreliability growth; rising red = DC-proximity growth.`;
+}
 function renderPipeline(){
   const el=document.getElementById("pipelinecard"),wrap=document.getElementById("pipelinewrap");
   if(!el||!wrap) return;
@@ -925,7 +979,7 @@ async function refetchNow(){
     try{DUR=await fetch("data/durations.json?t="+Date.now()).then(r=>r.json());}catch(e){}
     try{DIGEST=await fetch("data/digest.json?t="+Date.now()).then(r=>r.json());}catch(e){}
     plot();kpis();mixbar();renderFeeds();renderStates();topEvents();regionChips();
-    sparkline();timeline();renderDurations();renderDigest();ageTick();
+    sparkline();timeline();renderDurations();renderDigest();renderReliability();renderTrends();ageTick();
   }catch(e){
     const eb=document.getElementById("errbanner");
     eb.style.display="block";
@@ -983,10 +1037,12 @@ document.addEventListener("keydown",e=>{
   try{QUEUE=(await fetch("data/queue.json").then(r=>r.json())).requests||[];}catch(e){QUEUE=[];}
   try{RETIRE=(await fetch("data/retirements.json").then(r=>r.json())).plants||[];}catch(e){RETIRE=[];}
   try{ALERTS=await fetch("data/alerts.geojson").then(r=>r.json());}catch(e){ALERTS=null;}
+  try{RELIAB=await fetch("data/reliability.json").then(r=>r.json());}catch(e){RELIAB=null;}
+  try{TRENDS=await fetch("data/trends.json").then(r=>r.json());}catch(e){TRENDS=null;}
 
   drawDCs();drawInfra();buildSideRows();wireRadar();
   plot();kpis();mixbar();renderFeeds();renderStates();topEvents();regionChips();
-  sparkline();timeline();renderDurations();renderDigest();
+  sparkline();timeline();renderDurations();renderDigest();renderReliability();renderTrends();
   renderStrain();renderNyiso();renderEia();renderFlows();renderWatch();renderBurden();
   renderPipeline();loadEvidence(30);
   ageTick();setInterval(ageTick,30000);

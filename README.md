@@ -1,4 +1,4 @@
-# GRIDWATCH — FE Ohio outage / weather / data-center correlator
+# GRIDWATCH — outage / weather / data-center correlator
 
 ## What it does
 Polls most of the eastern-seaboards outage feeds, enriches every outage
@@ -21,4 +21,4 @@ of the territory?
 
 # Check it out here: https://paradoxsnowman.github.io/gridwatch/
 
-**Adding more states soon**
+**Eastern seaboard done**

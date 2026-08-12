@@ -636,10 +636,13 @@ class DukeAPI(Kubra):
                  or self.region.get("basic_token")
                  or getattr(DukeAPI, "_recovered_token", None))
         if token:
-            token = token.strip()
-            if not token.lower().startswith("basic "):
-                token = f"Basic {token}"
-            h["Authorization"] = token
+            # A pasted secret can carry stray quotes or an internal line break
+            # (GitHub preserves newlines); either makes the header malformed
+            # and Apigee answers 400 rather than 401. Rebuild it clean.
+            token = "".join(token.split()).strip("\"'")
+            if token.lower().startswith("basic"):
+                token = token[5:].lstrip(":").strip()
+            h["Authorization"] = f"Basic {token}"
         return h
 
     def _basic_auth_retry(self, url):
@@ -796,8 +799,18 @@ class DukeAPI(Kubra):
                           f"auth and no token is set. Add repo secret "
                           f"DUKE_BASIC_TOKEN (the 'Basic ...' value their map "
                           f"sends) and expose it as an env var in the workflow.")
+                body = ""
+                try:
+                    body = r.text[:220].replace("\n", " ")
+                except Exception:
+                    pass
+                authhdr = self.s.headers.get("Authorization", "")
                 print(f"[!] [{name}] outages endpoint returned "
-                      f"{r.status_code}; trying config-based auth")
+                      f"{r.status_code}. Duke said: {body!r}")
+                print(f"[i] [{name}] auth header present={bool(authhdr)} "
+                      f"len={len(authhdr)} prefix={authhdr[:9]!r} "
+                      f"(a 400 with a present header usually means a malformed "
+                      f"token or a changed API contract, not a rotation)")
                 r2 = self._basic_auth_retry(url)
                 if r2 is None:
                     r2 = self._discover_token(url)

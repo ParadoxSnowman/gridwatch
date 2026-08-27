@@ -103,6 +103,34 @@ overlap, it displays "not yet statistically distinguishable — keep collecting.
 difference when the intervals separate. A single day is noise; the comparison needs weeks of
 accumulation, and <b>a null result is published exactly as prominently as a positive one.</b></p>
 
+<h2 id="planned">Planned work is excluded from the evidence</h2>
+<div class="box warn">
+<p style="margin-top:0">Utilities schedule maintenance for <em>good weather</em>. That means planned
+outages land in the "fair-weather" bucket by design — and measurement on GRIDWATCH's own history
+found they made up roughly <b>16% of all fair-weather outages</b>, inflating the exact signal this
+project rests on.</p>
+<p style="margin-bottom:0">Every outage's utility-reported cause is now categorized, and anything
+identifying as planned work, scheduled maintenance, or an upgrade is tagged
+<b>PLANNED WORK (excluded from evidence)</b>. It is still shown on the map as its own layer — it is
+useful to see where crews are working — but it is removed from the fair-weather counts, the
+active-vs-control comparison, and the alerting. The Evidence tab reports how many were excluded.</p>
+</div>
+<p>Cause categories are derived from the raw strings the utilities themselves publish. Most report a
+generic "unplanned"; the level of detail is the utility's choice, not ours, and the
+<b>Reported causes</b> panel shows that distribution honestly rather than implying we know more than
+they disclose.</p>
+
+<h2 id="area">Searching your own area</h2>
+<p>Entering a ZIP code centers the map and summarizes what GRIDWATCH has recorded within 15 km over
+the trailing 30 days: incident count, customer-events, fair-weather share, the most common reported
+cause, the worst single day, how many incidents fell inside a data-center ring, and a percentile
+rank against every other area tracked. These are <b>GRIDWATCH's own observations of public utility
+outage maps</b> — they are not official utility reliability statistics, and an area outside the
+polled utilities will correctly show no history.</p>
+<p>ZIP centroids are resolved through the public Zippopotam.us service; no personal data is
+collected, stored, or transmitted anywhere — the lookup is a coordinate, and the analysis runs
+entirely in your browser.</p>
+
 <h2 id="reliability">The monopoly-reliability scorecard</h2>
 <p>Most Americans cannot choose their electricity distributor — a single regulated utility owns the
 wire in each territory. GRIDWATCH pairs each feed with that utility's own

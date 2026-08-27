@@ -84,6 +84,7 @@ tbody tr:hover{background:var(--panel2)}
 #mapwrap{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
 #map{height:72vh;min-height:460px;background:#0a0c10}
 .leaflet-container{background:#0a0c10;font:inherit}
+.osm-dark{filter:invert(1) hue-rotate(180deg) brightness(.82) contrast(1.08) saturate(.6)}
 .leaflet-popup-content-wrapper{background:var(--panel2);color:var(--text);
   border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .leaflet-popup-tip{background:var(--panel2)}
@@ -298,8 +299,29 @@ const hav=(a,b,c,d)=>{const R=6371,dl=(c-a)*Math.PI/180,dn=(d-b)*Math.PI/180,
 
 /* ================= map ================= */
 const map=L.map("map",{zoomControl:true,attributionControl:true}).setView([39.4,-80.5],6);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  {attribution:'© <a href="https://carto.com/">CARTO</a> © OSM',maxZoom:19,subdomains:"abcd"}).addTo(map);
+/* Basemap: CARTO's free dark tiles began requiring an API key, so we use
+   Esri's keyless Dark Gray Canvas, with OSM (CSS-darkened) as an automatic
+   fallback if Esri ever errors out. No keys, no accounts, no vendor lock. */
+const baseEsri=L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+  {attribution:'Tiles &copy; Esri',maxZoom:16});
+const baseEsriLabels=L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+  {maxZoom:16,opacity:.85});
+const baseOSM=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {attribution:'&copy; OpenStreetMap contributors',maxZoom:19,className:"osm-dark"});
+baseEsri.addTo(map); baseEsriLabels.addTo(map);
+let baseErrors=0, baseSwapped=false;
+baseEsri.on("tileerror",()=>{
+  if(baseSwapped) return;
+  if(++baseErrors>=6){
+    baseSwapped=true;
+    map.removeLayer(baseEsri);
+    if(map.hasLayer(baseEsriLabels)) map.removeLayer(baseEsriLabels);
+    baseOSM.addTo(map); baseOSM.bringToBack();
+    console.warn("basemap: Esri unavailable, fell back to OSM");
+  }
+});
 const outLayer=L.layerGroup().addTo(map),
       dcLayer=L.layerGroup().addTo(map),
       autoLayer=L.layerGroup(),

@@ -1259,6 +1259,40 @@ DIG_CAUSES = re.compile(
     r"dig|excavat|vehicle|car|pole|contact|construction|third.?party|damage", re.I)
 
 
+# Cause taxonomy. Derived from the actual vocabulary the 31 feeds emit — most
+# utilities report a generic "unplanned", a meaningful minority report planned
+# work, and a small tail give real causes. Order matters: "unplanned" must be
+# tested before "planned" because it contains the substring.
+CAUSE_RULES = [
+    ("unplanned (generic)", re.compile(r"\bunplanned", re.I)),
+    ("planned work",        re.compile(r"\b(planned|planning|plan\b|schedul|"
+                                       r"maintenance|upgrade)", re.I)),
+    ("vegetation / tree",   re.compile(r"\b(tree|vegetation|branch|limb|"
+                                       r"foliage)", re.I)),
+    ("equipment",           re.compile(r"\b(equip|transformer|conductor|pole\b|"
+                                       r"line damag|fuse|breaker|cable|"
+                                       r"underground)", re.I)),
+    ("animal",              re.compile(r"\b(animal|squirrel|bird|wildlife)", re.I)),
+    ("vehicle / dig-in",    re.compile(r"\b(vehicle|car\b|motor|accident|dig\b|"
+                                       r"digging|excavat)", re.I)),
+    ("weather (stated)",    re.compile(r"\b(weather|storm|wind|lightning|ice\b|"
+                                       r"snow|flood)", re.I)),
+    ("under investigation", re.compile(r"\b(investigat|evaluat|undetermined|"
+                                       r"unknown|pending|assess)", re.I)),
+]
+
+
+def cause_category(cause):
+    """Bucket a raw utility cause string. Returns (category, is_planned)."""
+    c = (cause or "").strip()
+    if not c:
+        return "not reported", False
+    for label, rx in CAUSE_RULES:
+        if rx.search(c):
+            return label, label == "planned work"
+    return "other", False
+
+
 def classify(outage, wx, alerts, dc, dc_km, cfg):
     """Return (classification, weather_flag, dc_flag, rationale)."""
     weather_signals = []
@@ -1279,6 +1313,17 @@ def classify(outage, wx, alerts, dc, dc_km, cfg):
 
     weather_flag = bool(weather_signals)
     dc_flag = dc is not None and dc_km <= cfg["dc_radius_km"]
+
+    # Planned maintenance happens in good weather BY DESIGN, so it lands in the
+    # fair-weather bucket and inflates the exact signal this project rests on
+    # (measured: ~16% of fair-weather outages). Tag it and take it out of the
+    # evidence path — it is utility work, not unexplained failure.
+    ccat, planned = cause_category(outage.get("cause", ""))
+    if planned:
+        rationale = f"utility-stated planned work: '{outage.get('cause','')}'"
+        if dc:
+            rationale += f" | nearest DC: {dc['name']} ({dc_km:.1f} km)"
+        return "PLANNED WORK (excluded from evidence)", False, False, rationale
 
     if weather_flag and dc_flag:
         cls = "AMBIGUOUS (weather + DC-proximate)"
@@ -2429,6 +2474,8 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
                        op_dc_name=op_site["name"] if op_near else None,
                        op_dc_km=round(op_dist, 2) if op_near else None,
                        weather_flag=int(wflag), dc_flag=int(dflag),
+                       cause_category=cause_category(o.get("cause", ""))[0],
+                       planned_flag=int(cause_category(o.get("cause", ""))[1]),
                        classification=cls, rationale=why)
             emitted.append(rec)
             if conn:
@@ -2612,6 +2659,10 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
     with open(os.path.join(hist_dir, "index.json"), "w") as f:
         json.dump({"days": slim}, f, separators=(",", ":"))
     _emit_durations(emit_dir, hist_dir, days)
+    try:
+        _emit_hotspots(emit_dir, hist_dir, days)
+    except Exception as e:
+        print(f"[!] hotspots failed (non-fatal): {e}")
 
     gj = {"type": "FeatureCollection",
           "features": [{"type": "Feature",
@@ -2701,6 +2752,89 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
         print(f"[i] copied {src_name} -> {emit_dir}")
     print(f"[i] emitted {len(records)} records -> {emit_dir}/latest.json "
           f"+ history/{day}.ndjson")
+
+
+def _emit_hotspots(emit_dir, hist_dir, days, window=30, cell=0.05):
+    """Spatial rollup of history into ~5km grid cells so the site can answer
+    'what happens where I live'. Each cell carries unique-outage count, total
+    customer-events, fair-weather share, planned share, top causes, and the
+    worst single day. Powers the ZIP search panel and the hotspot layer.
+
+    Kept small: cells are rounded, only cells with >=3 unique outages are
+    emitted, and the top 4000 by volume are kept."""
+    from collections import Counter, defaultdict
+    use = [d["date"] for d in days][-window:]
+    cells = defaultdict(lambda: {"n": 0, "cust": 0, "fair": 0, "planned": 0,
+                                 "dc": 0, "causes": Counter(),
+                                 "byday": Counter(), "regions": Counter()})
+    causes_all = Counter()
+    causes_by_region = defaultdict(Counter)
+    seen = set()
+    for date in use:
+        p = os.path.join(hist_dir, f"{date}.ndjson")
+        if not os.path.exists(p):
+            continue
+        with open(p) as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                key = (r.get("region"), r.get("outage_id"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                la, lo = r.get("lat"), r.get("lon")
+                if la is None or lo is None:
+                    continue
+                cat = r.get("cause_category")
+                if cat is None:
+                    cat = cause_category(r.get("cause", ""))[0]
+                planned = bool(r.get("planned_flag")) or cat == "planned work"
+                causes_all[cat] += 1
+                causes_by_region[r.get("region", "?")][cat] += 1
+                ck = (round(la / cell) * cell, round(lo / cell) * cell)
+                c = cells[ck]
+                c["n"] += 1
+                c["cust"] += r.get("customers") or 0
+                c["regions"][r.get("region", "?")] += 1
+                c["causes"][cat] += 1
+                c["byday"][date] += 1
+                if planned:
+                    c["planned"] += 1
+                elif not r.get("weather_flag"):
+                    c["fair"] += 1
+                if r.get("dc_flag"):
+                    c["dc"] += 1
+    out = []
+    for (la, lo), c in cells.items():
+        if c["n"] < 3:
+            continue
+        worst = c["byday"].most_common(1)[0] if c["byday"] else ("", 0)
+        out.append({"lat": round(la, 3), "lon": round(lo, 3), "n": c["n"],
+                    "cust": c["cust"], "fair": c["fair"],
+                    "planned": c["planned"], "dc": c["dc"],
+                    "region": c["regions"].most_common(1)[0][0],
+                    "top_cause": c["causes"].most_common(1)[0][0],
+                    "worst_day": worst[0], "worst_n": worst[1]})
+    out.sort(key=lambda x: -x["n"])
+    out = out[:4000]
+    payload = {"generated_at": datetime.now(timezone.utc).isoformat(
+                   timespec="seconds"),
+               "window_days": len(use), "cell_deg": cell,
+               "unique_outages": len(seen),
+               "causes": causes_all.most_common(),
+               "causes_by_region": {k: v.most_common(6)
+                                    for k, v in causes_by_region.items()},
+               "cells": out}
+    with open(os.path.join(emit_dir, "hotspots.json"), "w") as f:
+        json.dump(payload, f, separators=(",", ":"))
+    print(f"[i] hotspots: {len(out)} cells over {len(use)}d "
+          f"({len(seen):,} unique outages), top cause "
+          f"'{causes_all.most_common(1)[0][0] if causes_all else '-'}'")
+    return payload
 
 
 def _emit_durations(emit_dir, hist_dir, days, window=7, poll_minutes=None):

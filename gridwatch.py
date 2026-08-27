@@ -520,9 +520,20 @@ class Kubra:
         if isinstance(crew, dict):
             crew = crew.get("EN-US") or crew.get("orig") \
                 or next(iter(crew.values()), "")
-        oid = (item.get("id")
-               or desc.get("inc_id")
-               or f"{round(lat,4)},{round(lon,4)}:{cust}")
+        # KUBRA's item["id"] is a per-tile position counter ("14-0", "14-1"),
+        # NOT a utility outage id — reusing it across polls collapsed
+        # thousands of distinct outages into a handful. Prefer a real
+        # incident id; otherwise key on position, which is stable while the
+        # outage exists. Customer count is deliberately NOT in the key: it
+        # changes as crews restore, which would split one outage into many.
+        raw_id = str(item.get("id") or "")
+        inc = desc.get("inc_id") or desc.get("incident_id") or desc.get("id")
+        if inc and len(str(inc)) > 3 and not SYNTHETIC_ID.match(str(inc)):
+            oid = str(inc)
+        elif raw_id and len(raw_id) > 3 and not SYNTHETIC_ID.match(raw_id):
+            oid = raw_id
+        else:
+            oid = f"{round(lat,4)},{round(lon,4)}"
         return {
             "outage_id": str(oid),
             "lat": round(float(lat), 5),
@@ -567,7 +578,13 @@ class IFactor(Kubra):
         directory, data_path = None, None
         for mu in meta_candidates:
             try:
-                r = self.s.get(mu, timeout=20)
+                # CloudFront happily serves a cached metadata.json for months;
+                # AEP Ohio was pinned to a 2025 directory this way, silently
+                # replaying year-old outages. Bust the cache every poll.
+                bust = f"{mu}{'&' if '?' in mu else '?'}_={int(time.time())}"
+                r = self.s.get(bust, timeout=20,
+                               headers={"Cache-Control": "no-cache",
+                                        "Pragma": "no-cache"})
                 if r.status_code != 200:
                     print(f"    [{self.region['name']}] {r.status_code} {mu}")
                     continue
@@ -578,6 +595,23 @@ class IFactor(Kubra):
                     directory = m.group(1) if m else None
                 if directory:
                     data_path = mu.rsplit("/metadata", 1)[0][len(base) + 1:]
+                    # the stamp is YYYY_MM_DD_HH_MM_SS — if it is old, the feed
+                    # is frozen and every "outage" we record is a replay
+                    m2 = re.match(r"(\d{4})_(\d{2})_(\d{2})", str(directory))
+                    if m2:
+                        try:
+                            stamp = datetime(int(m2.group(1)), int(m2.group(2)),
+                                             int(m2.group(3)),
+                                             tzinfo=timezone.utc)
+                            age_d = (datetime.now(timezone.utc) - stamp).days
+                            if age_d > 2:
+                                print(f"[!] [{self.region['name']}] FEED STALE: "
+                                      f"metadata points at {directory} "
+                                      f"({age_d} days old) — data is a replay, "
+                                      f"not live. Recapture the map's data URL.")
+                                self.stale_days = age_d
+                        except ValueError:
+                            pass
                     break
             except (requests.RequestException, ValueError):
                 continue
@@ -1280,6 +1314,29 @@ CAUSE_RULES = [
     ("under investigation", re.compile(r"\b(investigat|evaluat|undetermined|"
                                        r"unknown|pending|assess)", re.I)),
 ]
+
+
+SYNTHETIC_ID = re.compile(r"^\d{1,2}-\d+$")
+
+
+def stable_key(rec):
+    """Identity for an outage across polls.
+
+    Several feeds (all the KUBRA ones, AEP's iFactor) hand out ids that are
+    really per-poll position counters — '14-0', '9', '18'. Deduplicating on
+    those merged unrelated outages and made 30 days of FirstEnergy history
+    look like ~25 incidents. When an id looks synthetic we fall back to
+    rounded coordinates, which are stable for the life of an outage. Applied
+    at analysis time so history written before the fix is corrected too.
+    """
+    oid = str(rec.get("outage_id") or "")
+    reg = rec.get("region", "?")
+    if oid and len(oid) > 3 and not SYNTHETIC_ID.match(oid) and "," not in oid:
+        return f"{reg}|{oid}"
+    la, lo = rec.get("lat"), rec.get("lon")
+    if la is None or lo is None:
+        return f"{reg}|{oid}"
+    return f"{reg}|@{round(float(la), 4)},{round(float(lo), 4)}"
 
 
 def cause_category(cause):
@@ -2620,7 +2677,7 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
                 n += 1
                 try:
                     r = json.loads(line)
-                    uniq[f"{r.get('region')}|{r.get('outage_id')}"] = r
+                    uniq[stable_key(r)] = r
                 except ValueError:
                     continue
         fair = sum(1 for r in uniq.values() if not r.get("weather_flag"))
@@ -2782,7 +2839,7 @@ def _emit_hotspots(emit_dir, hist_dir, days, window=30, cell=0.05):
                     r = json.loads(line)
                 except ValueError:
                     continue
-                key = (r.get("region"), r.get("outage_id"))
+                key = stable_key(r)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -2857,7 +2914,7 @@ def _emit_durations(emit_dir, hist_dir, days, window=7, poll_minutes=None):
                         r = json.loads(line)
                     except ValueError:
                         continue
-                    k = f"{r.get('region')}|{r.get('outage_id')}"
+                    k = stable_key(r)
                     t = r.get("polled_at", "")
                     all_ts.add(t)
                     s = spans.setdefault(k, {"first": t, "last": t,

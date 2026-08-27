@@ -157,6 +157,14 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
     <div class="logo">⚡ <b>GRIDWATCH</b></div>
     <div class="status"><span class="sdot" id="agedot"></span><span id="agetext">—</span></div>
     <div class="status" id="feedpill">—</div>
+    <div id="zipbox" style="display:flex;gap:6px;align-items:center;margin-left:auto">
+      <input id="zipinput" placeholder="your ZIP code" maxlength="5" inputmode="numeric"
+        style="width:118px;padding:5px 10px;border-radius:16px;font-size:12px;
+        background:var(--panel2);border:1px solid var(--line);color:var(--text)">
+      <button id="zipgo" style="padding:5px 12px;border-radius:16px;font-size:12px;cursor:pointer;
+        background:var(--accent);border:1px solid var(--accent);color:#0a0c10;font-weight:600">
+        check my area</button>
+    </div>
     <button id="refetch" onclick="refetchNow()" title="re-fetch published data (does not re-scrape utilities)">↻ refresh</button>
   </div>
   <nav>
@@ -173,6 +181,8 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
 
 <!-- ============ LIVE ============ -->
 <div id="tab-live">
+  <div class="card" id="areawrap" style="display:none;border-color:var(--accent)">
+    <h2 id="areatitle">Your area</h2><div id="areacard"></div></div>
   <div class="kpis" id="kpis"></div>
   <div class="grid">
     <div>
@@ -199,6 +209,8 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
         <table id="statetable"><thead><tr><th>state</th><th class="n">out</th><th class="n">cust</th></tr></thead>
         <tbody></tbody></table></div>
       <div class="card"><h2>Top events</h2><div id="topevents" class="meta">—</div></div>
+      <div class="card" id="causewrap" style="display:none"><h2>Reported causes — 30 days</h2>
+        <div id="causecard"></div></div>
     </div>
   </div>
 </div>
@@ -275,7 +287,7 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
 const REFRESH_MS = 2*60*1000;
 let LATEST=null,PREV=null,INDEX={},DUR=null,DCS=[],AUTO=[],INFRA=[],BURDEN=null,
     FLOWS=null,EIAD=null,STRAIN=null,NYF=null,DIGEST=null,
-    QUEUE=[],RETIRE=[],ALERTS=null,RELIAB=null,TRENDS=null,
+    QUEUE=[],RETIRE=[],ALERTS=null,RELIAB=null,TRENDS=null,HOT=null,AREA=null,
     PL_SUBS=[],PL_PLANTS=[],BACKBONE=[],
     activeRegions=new Set(),currentView="live";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -294,7 +306,8 @@ const outLayer=L.layerGroup().addTo(map),
       infraLayer=L.layerGroup().addTo(map),
       subLayer=L.layerGroup(),plantLayer=L.layerGroup(),
       bbLayers={hi:L.layerGroup(),mid:L.layerGroup(),lo:L.layerGroup()},
-      queueLayer=L.layerGroup(),retireLayer=L.layerGroup(),alertLayer=L.layerGroup();
+      queueLayer=L.layerGroup(),retireLayer=L.layerGroup(),alertLayer=L.layerGroup(),
+      hotLayer=L.layerGroup(),plannedLayer=L.layerGroup(),areaLayer=L.layerGroup().addTo(map);
 
 const CLASSCOLOR=r=>r.dc_flag?"var(--red)":
   String(r.classification||"").startsWith("NEAR OPERATING")?"var(--pink)":
@@ -496,6 +509,23 @@ function buildSideRows(){
           .addTo(retireLayer);}
     },false);
   }
+  if(HOT&&(HOT.cells||[]).length)
+    addRow("Outage hotspots ("+HOT.window_days+"d)","#ff5c5c",HOT.cells.length,
+      hotLayer,drawHotspots,false);
+  const planned=((LATEST&&LATEST.outages)||[]).filter(o=>
+    String(o.classification||"").startsWith("PLANNED WORK")||o.planned_flag);
+  if(planned.length)
+    addRow("Planned utility work (live)","#22d3ee",planned.length,plannedLayer,()=>{
+      for(const o of planned)
+        L.circleMarker([o.lat,o.lon],{radius:5,color:"#22d3ee",fillColor:"#0e7490",
+          fillOpacity:.8,weight:1.5})
+          .bindPopup(`<div class="pop-t">🔧 Planned work — ${esc(o.region)}</div>
+            <div class="pop-r"><span>customers</span><b>${fmt(o.customers)}</b></div>
+            <div class="pop-r"><span>utility cause</span><b>${esc(o.cause||"planned")}</b></div>
+            ${o.etr?`<div class="pop-r"><span>ETR</span><b>${esc(o.etr)}</b></div>`:""}
+            <div class="meta" style="margin-top:4px">Scheduled maintenance / upgrade work —
+            excluded from evidence math</div>`).addTo(plannedLayer);
+    },false);
   // filter box
   const f=document.getElementById("sitefilter");
   f.oninput=()=>{const q=f.value.toLowerCase();
@@ -654,6 +684,137 @@ function regionChips(){
     mk(r,()=>{activeRegions.has(r)?activeRegions.delete(r):activeRegions.add(r);
       regionChips();plot();},activeRegions.has(r));
 }
+/* ============ ZIP search: "what happens where I live" ============ */
+async function zipLookup(){
+  const el=document.getElementById("zipinput"), btn=document.getElementById("zipgo");
+  const zip=(el.value||"").trim();
+  if(!/^\d{5}$/.test(zip)){el.style.borderColor="var(--red)";
+    setTimeout(()=>el.style.borderColor="var(--line)",1200);return;}
+  btn.disabled=true; btn.textContent="…";
+  try{
+    const j=await fetch(`https://api.zippopotam.us/us/${zip}`).then(r=>{
+      if(!r.ok) throw new Error("not found"); return r.json();});
+    const pl=(j.places||[])[0];
+    if(!pl) throw new Error("no place");
+    AREA={zip, lat:+pl.latitude, lon:+pl.longitude,
+          name:pl["place name"], state:pl["state abbreviation"]||pl.state};
+    renderArea();
+    map.setView([AREA.lat,AREA.lon],11);
+    document.querySelector('.tab[data-tab="live"]').click();
+    location.hash="zip="+zip;
+  }catch(e){
+    const w=document.getElementById("areawrap"), c=document.getElementById("areacard");
+    w.style.display=""; document.getElementById("areatitle").textContent="Your area";
+    c.innerHTML=`<div class="meta">Couldn't look up ZIP ${esc(zip)} — either it isn't a
+      US ZIP or the lookup service is unreachable. You can also click any point on the map.</div>`;
+  }
+  btn.disabled=false; btn.textContent="check my area";
+}
+function areaStats(lat,lon,km){
+  // pull the precomputed 30-day grid cells inside the radius
+  const cells=((HOT&&HOT.cells)||[]).filter(c=>hav(lat,lon,c.lat,c.lon)<=km);
+  const s={n:0,cust:0,fair:0,planned:0,dc:0,causes:{},worst:["",0],regions:{}};
+  for(const c of cells){
+    s.n+=c.n; s.cust+=c.cust; s.fair+=c.fair; s.planned+=c.planned; s.dc+=c.dc;
+    s.causes[c.top_cause]=(s.causes[c.top_cause]||0)+c.n;
+    s.regions[c.region]=(s.regions[c.region]||0)+c.n;
+    if(c.worst_n>s.worst[1]) s.worst=[c.worst_day,c.worst_n];
+  }
+  s.cells=cells.length;
+  // percentile rank of the busiest local cell against every cell we track
+  const all=((HOT&&HOT.cells)||[]).map(c=>c.n).sort((a,b)=>a-b);
+  const best=Math.max(0,...cells.map(c=>c.n));
+  s.pct = all.length&&best ? Math.round(100*all.filter(x=>x<best).length/all.length) : null;
+  return s;
+}
+function renderArea(){
+  const wrap=document.getElementById("areawrap"), el=document.getElementById("areacard");
+  if(!wrap||!el||!AREA) return;
+  wrap.style.display="";
+  document.getElementById("areatitle").textContent=
+    `${AREA.name||"Your area"}${AREA.state?", "+AREA.state:""} · ${AREA.zip}`;
+  areaLayer.clearLayers();
+  const KM=15;
+  L.circle([AREA.lat,AREA.lon],{radius:KM*1000,color:"var(--accent)",weight:2,
+    fill:false,dashArray:"6 6"}).addTo(areaLayer);
+  const s=areaStats(AREA.lat,AREA.lon,KM);
+  const live=((LATEST&&LATEST.outages)||[]).filter(o=>hav(AREA.lat,AREA.lon,o.lat,o.lon)<=KM);
+  const liveCust=live.reduce((a,o)=>a+(o.customers||0),0);
+  const nearDC=(DCS||[]).filter(d=>d.lat).map(d=>({d,km:hav(AREA.lat,AREA.lon,d.lat,d.lon)}))
+    .sort((a,b)=>a.km-b.km)[0];
+  if(!s.n&&!live.length){
+    el.innerHTML=`<div class="meta">No outage history recorded within ${KM} km of ${esc(AREA.zip)}
+      in the last ${HOT?HOT.window_days:30} days. Either this area is outside the utilities
+      GRIDWATCH polls, or it has been quiet.</div>`;
+    return;}
+  const topCause=Object.entries(s.causes).sort((a,b)=>b[1]-a[1])[0];
+  const util=Object.entries(s.regions).sort((a,b)=>b[1]-a[1])[0];
+  const realFair=s.n?Math.round(100*s.fair/s.n):0;
+  el.innerHTML=`
+    <div class="kpis" style="margin-bottom:10px">
+      <div class="kpi"><div class="v">${fmt(s.n)}</div><div class="l">outages in ${HOT?HOT.window_days:30}d</div></div>
+      <div class="kpi"><div class="v">${fmt(s.cust)}</div><div class="l">customer-events</div></div>
+      <div class="kpi"><div class="v">${realFair}%</div><div class="l">fair-weather</div></div>
+      <div class="kpi"><div class="v" style="color:${live.length?"var(--red)":"var(--green)"}">${live.length}</div>
+        <div class="l">out right now${live.length?` (${fmt(liveCust)})`:""}</div></div>
+      ${s.pct!=null?`<div class="kpi"><div class="v">${s.pct}<span style="font-size:14px">th</span></div>
+        <div class="l">percentile vs all areas</div></div>`:""}
+    </div>
+    <div class="meta">
+      Within ${KM} km of ${esc(AREA.zip)}${util?` · served mainly by <b>${esc(util[0])}</b>`:""}.
+      ${topCause?`Most common reported cause: <b>${esc(topCause[0])}</b>.`:""}
+      ${s.planned?`<b>${fmt(s.planned)}</b> were planned utility work.`:""}
+      ${s.worst[1]?`Worst day: <b>${esc(s.worst[0])}</b> (${s.worst[1]} outages).`:""}
+      ${s.dc?`<span style="color:var(--red)"><b>${s.dc}</b> outages here were within a data-center ring.</span>`:""}
+      ${nearDC&&nearDC.km<40?`<br>Nearest tracked data center: <b>${esc(nearDC.d.name)}</b>
+        (${nearDC.km.toFixed(0)} km, ${esc(nearDC.d.status)}).`:""}
+    </div>
+    ${live.length?`<div style="margin-top:8px">`+live.sort((a,b)=>(b.customers||0)-(a.customers||0))
+      .slice(0,5).map(o=>`<div class="longrow"><span><span class="okdot" style="background:${cRaw(o)}"></span>
+      ${esc(o.region)} · ${esc((o.classification||"").toLowerCase())}</span>
+      <b>${fmt(o.customers)}</b></div>`).join("")+`</div>`:""}
+    <div class="caveat">Counts are unique outage incidents recorded by GRIDWATCH in the last
+      ${HOT?HOT.window_days:30} days within ${KM} km — not an official utility figure.
+      Percentile compares this area's busiest grid cell against every cell tracked.</div>`;
+}
+function drawHotspots(){
+  if(!HOT||!(HOT.cells||[]).length) return;
+  const max=Math.max(...HOT.cells.map(c=>c.n),1);
+  for(const c of HOT.cells.slice(0,1500)){
+    const t=c.n/max;
+    L.circleMarker([c.lat,c.lon],{radius:3+Math.sqrt(c.n)*1.1,
+      color:t>.5?"#ff5c5c":t>.2?"#f5a623":"#4c9aff",
+      fillColor:t>.5?"#ff5c5c":t>.2?"#f5a623":"#4c9aff",
+      fillOpacity:.25,weight:1})
+      .bindPopup(`<div class="pop-t">Outage hotspot</div>
+        <div class="pop-r"><span>incidents (${HOT.window_days}d)</span><b>${c.n}</b></div>
+        <div class="pop-r"><span>customer-events</span><b>${fmt(c.cust)}</b></div>
+        <div class="pop-r"><span>fair-weather</span><b>${c.n?Math.round(100*c.fair/c.n):0}%</b></div>
+        <div class="pop-r"><span>utility</span><b>${esc(c.region)}</b></div>
+        <div class="pop-r"><span>top cause</span><b>${esc(c.top_cause)}</b></div>
+        ${c.worst_day?`<div class="pop-r"><span>worst day</span><b>${esc(c.worst_day)} (${c.worst_n})</b></div>`:""}`)
+      .addTo(hotLayer);
+  }
+}
+function renderCauses(){
+  const el=document.getElementById("causecard"),wrap=document.getElementById("causewrap");
+  if(!el||!wrap) return;
+  const cs=(HOT&&HOT.causes)||[];
+  if(!cs.length){wrap.style.display="none";return;}
+  wrap.style.display="";
+  const tot=cs.reduce((a,[,n])=>a+n,0)||1;
+  const COL={"unplanned (generic)":"#8a93a6","not reported":"#4b5563","planned work":"#22d3ee",
+    "vegetation / tree":"#3ddc84","equipment":"#f5a623","weather (stated)":"#4c9aff",
+    "under investigation":"#a78bfa","animal":"#f472b6","vehicle / dig-in":"#fb923c","other":"#64748b"};
+  el.innerHTML=cs.map(([c,n])=>`<div class="longrow" style="border:0;padding:3px 0">
+      <span><span class="okdot" style="background:${COL[c]||"#64748b"}"></span>${esc(c)}</span>
+      <b>${fmt(n)} · ${(100*n/tot).toFixed(1)}%</b></div>
+      <div class="statebar" style="width:${Math.max(2,100*n/tot)}%;background:${COL[c]||"#64748b"};
+        margin-bottom:5px"></div>`).join("")
+    +`<div class="caveat">What utilities themselves report, ${HOT.window_days}-day window.
+      Most report a generic "unplanned" — the detail level is the utilities' choice, not ours.
+      <b>Planned work is excluded from all evidence math</b>: it happens in fair weather by design.</div>`;
+}
 function renderStrain(){
   const el=document.getElementById("straincard"),wrap=document.getElementById("strainwrap");
   if(!el||!wrap) return;
@@ -749,11 +910,18 @@ async function loadEvidence(days){
   }));
   const R=(LATEST&&LATEST.dc_radius_km)||8;
   const controls=DCS.filter(s=>s.status==="control"&&s.lat);
-  const seen=new Set(); let aT=0,aF=0,cT=0,cF=0;
+  const seen=new Set(); let aT=0,aF=0,cT=0,cF=0,planned=0;
   const bySite={};
   for(const r of recs){
     const key=`${r.region}|${r.outage_id}`;
     if(seen.has(key)) continue; seen.add(key);
+    // History written before the planned-work flag existed still carries the
+    // raw cause — re-check it here so old records can't smuggle scheduled
+    // maintenance into the fair-weather evidence.
+    const rawc=String(r.cause||"");
+    const isPlanned = r.planned_flag || r.cause_category==="planned work" ||
+      (/\b(planned|schedul|maintenance|upgrade)/i.test(rawc) && !/\bunplanned/i.test(rawc));
+    if(isPlanned){planned++; continue;}
     if(r.dc_flag||["construction","contested","announced"].includes(r.dc_status||"")){
       aT++; if(!r.weather_flag) aF++;
       if(r.dc_name){
@@ -787,6 +955,8 @@ async function loadEvidence(days){
     vs <b>controls ${cT?pc(cF/cT):"—"}</b>
     ${c?`[${pc(c[0])}–${pc(c[1])}]`:""} (${cF}/${cT}). ${verdict}.
     <div class="caveat">95% Wilson intervals over ${days} days of unique incidents.
+      ${planned?`<b>${fmt(planned)}</b> planned-maintenance outages excluded — they occur in fair
+      weather by design and would inflate this comparison. `:""}
     Matching shares mean "growth corridor", not "data center".</div>`;
   // scorecard
   const sc=document.getElementById("scorecard");
@@ -986,6 +1156,7 @@ async function refetchNow(){
     try{DUR=await fetch("data/durations.json?t="+Date.now()).then(r=>r.json());}catch(e){}
     try{DIGEST=await fetch("data/digest.json?t="+Date.now()).then(r=>r.json());}catch(e){}
     plot();kpis();mixbar();renderFeeds();renderStates();topEvents();regionChips();
+    if(AREA) renderArea();
     sparkline();timeline();renderDurations();renderDigest();renderReliability();renderTrends();ageTick();
   }catch(e){
     const eb=document.getElementById("errbanner");
@@ -1046,6 +1217,7 @@ document.addEventListener("keydown",e=>{
   try{ALERTS=await fetch("data/alerts.geojson").then(r=>r.json());}catch(e){ALERTS=null;}
   try{RELIAB=await fetch("data/reliability.json").then(r=>r.json());}catch(e){RELIAB=null;}
   try{TRENDS=await fetch("data/trends.json").then(r=>r.json());}catch(e){TRENDS=null;}
+  try{HOT=await fetch("data/hotspots.json").then(r=>r.json());}catch(e){HOT=null;}
 
   drawDCs();drawInfra();buildSideRows();wireRadar();
   plot();kpis();mixbar();renderFeeds();renderStates();topEvents();regionChips();
@@ -1053,6 +1225,12 @@ document.addEventListener("keydown",e=>{
   renderStrain();renderNyiso();renderEia();renderFlows();renderWatch();renderBurden();
   renderPipeline();loadEvidence(30);
   ageTick();setInterval(ageTick,30000);
+  renderCauses();
+  document.getElementById("zipgo").onclick=zipLookup;
+  document.getElementById("zipinput").addEventListener("keydown",
+    e=>{if(e.key==="Enter") zipLookup();});
+  const zm=location.hash.match(/zip=(\d{5})/);
+  if(zm){document.getElementById("zipinput").value=zm[1];zipLookup();}
   siteDeepLink();window.addEventListener("hashchange",siteDeepLink);
   setTimeout(refresh,REFRESH_MS);
   document.getElementById("boot").classList.add("hide");

@@ -2821,7 +2821,8 @@ def _emit_playback(emit_dir, hist_dir, dates):
     they FIRST appeared, and duration is measured across the whole window so an
     outage spanning midnight is still one incident.
     """
-    spans = {}
+    GAP_HOURS = 6
+    spans, closed = {}, []
     for date in dates:
         p = os.path.join(hist_dir, f"{date}.ndjson")
         if not os.path.exists(p):
@@ -2840,6 +2841,19 @@ def _emit_playback(emit_dir, hist_dir, dates):
                 k = stable_key(r)
                 t = r.get("polled_at", "")
                 s = spans.get(k)
+                # Position-based identity would merge a spot that fails again
+                # weeks later into one enormous "incident" and report a
+                # restoration time of days. If the same key vanishes for longer
+                # than GAP_HOURS and comes back, that is a NEW outage.
+                if s is not None and t and s["l"]:
+                    try:
+                        gap = (datetime.fromisoformat(t)
+                               - datetime.fromisoformat(s["l"])).total_seconds()
+                        if gap > GAP_HOURS * 3600:
+                            closed.append(s)
+                            s = None
+                    except ValueError:
+                        pass
                 if s is None:
                     cat = r.get("cause_category")
                     if cat is None:
@@ -2861,9 +2875,10 @@ def _emit_playback(emit_dir, hist_dir, dates):
                     if t > s["l"]:
                         s["l"] = t
                     s["c"] = max(s["c"], r.get("customers") or 0)
-    latest_ts = max((s["l"] for s in spans.values()), default="")
+    all_spans = list(spans.values()) + closed
+    latest_ts = max((s["l"] for s in all_spans), default="")
     byday = {}
-    for s in spans.values():
+    for s in all_spans:
         mins = None
         if s["l"] < latest_ts:          # disappeared => restored
             try:
@@ -2887,9 +2902,15 @@ def _emit_playback(emit_dir, hist_dir, dates):
             json.dump({"date": date, "regions": regs, "causes": cats,
                        "o": rows}, f, separators=(",", ":"))
         total += len(rows)
-    resolved = [s for s in spans.values() if s["l"] < latest_ts]
-    print(f"[i] playback: {len(byday)} day files, {total:,} incidents "
-          f"({len(resolved):,} with restoration times)")
+    avail = sorted(byday)
+    with open(os.path.join(out_dir, "index.json"), "w") as f:
+        json.dump({"dates": avail,
+                   "generated_at": datetime.now(timezone.utc).isoformat(
+                       timespec="seconds")}, f, separators=(",", ":"))
+    resolved = [s for s in all_spans if s["l"] < latest_ts]
+    print(f"[i] playback: {len(byday)} day files "
+          f"({avail[0] if avail else '-'} .. {avail[-1] if avail else '-'}), "
+          f"{total:,} incidents ({len(resolved):,} with restoration times)")
     return byday
 
 

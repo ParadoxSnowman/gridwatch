@@ -98,6 +98,14 @@ tbody tr:hover{background:var(--panel2)}
 #radarbtn{padding:5px 13px;border-radius:18px;font-size:12px;cursor:pointer;
   background:var(--panel);border:1px solid var(--line);color:var(--text)}
 #radarbtn.on{background:var(--accent);color:#0a0c10;border-color:var(--accent)}
+#playbar{position:absolute;left:12px;right:12px;bottom:12px;z-index:1000;
+  background:rgba(18,21,28,.95);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+#playbar button{padding:4px 11px;border-radius:14px;font-size:12px;cursor:pointer;
+  background:var(--panel2);border:1px solid var(--line);color:var(--text)}
+#playbar button:hover{border-color:var(--accent)}
+#playclose{border-color:var(--red)!important;color:var(--red)!important}
+#playslider{accent-color:var(--accent)}
+#histbtn.on{background:var(--accent);color:#0a0c10;border-color:var(--accent)}
 #legend{position:absolute;bottom:12px;left:12px;z-index:1000;background:rgba(18,21,28,.92);
   border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:11px;color:var(--dim)}
 #legend div{display:flex;align-items:center;gap:7px;margin:2px 0}
@@ -189,7 +197,17 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
     <div>
       <div id="mapwrap">
         <div id="map"></div>
-        <div id="radarctl"><button id="radarbtn">🌧 radar</button><span id="radarclock" class="meta" style="min-width:52px"></span></div>
+        <div id="radarctl"><button id="histbtn">📅 history</button>
+          <button id="radarbtn">🌧 radar</button><span id="radarclock" class="meta" style="min-width:52px"></span></div>
+        <div id="playbar" style="display:none">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button id="playbtn" title="play / pause">▶</button>
+            <input id="playslider" type="range" min="0" max="0" value="0" style="flex:1;min-width:160px">
+            <b id="playdate" style="min-width:94px;font-size:12.5px">—</b>
+            <button id="playclose" title="back to live map">✕ live</button>
+          </div>
+          <div id="playstats" class="meta" style="margin-top:6px">loading…</div>
+        </div>
         <div id="legend"></div>
       </div>
       <div class="card" style="margin-top:14px"><h2>Outage mix</h2>
@@ -613,8 +631,10 @@ function kpis(){
   const el=document.getElementById("kpis"); if(!el||!LATEST) return;
   const os=LATEST.outages||[], feeds=LATEST.feeds||[];
   const cust=os.reduce((a,o)=>a+(o.customers||0),0);
-  const fair=os.filter(o=>!o.weather_flag).length;
-  const dcp=os.filter(o=>o.dc_flag).length;
+  const isPlan=o=>o.planned_flag||String(o.classification||"").startsWith("PLANNED WORK");
+  const plan=os.filter(isPlan).length;
+  const fair=os.filter(o=>!o.weather_flag&&!isPlan(o)).length;
+  const dcp=os.filter(o=>o.dc_flag&&!isPlan(o)).length;
   const ok=feeds.filter(f=>!f.error).length;
   const prev=PREV?{
     n:(PREV.outages||[]).length,
@@ -628,6 +648,7 @@ function kpis(){
     <div class="kpi"><div class="v">${fmt(os.length)}${prev?delta(os.length,prev.n):""}</div><div class="l">active outages</div></div>
     <div class="kpi"><div class="v">${fmt(cust)}${prev?delta(cust,prev.c):""}</div><div class="l">customers out</div></div>
     <div class="kpi"><div class="v">${os.length?Math.round(100*fair/os.length):0}%</div><div class="l">fair-weather</div></div>
+    <div class="kpi"><div class="v" style="color:#22d3ee">${fmt(plan)}</div><div class="l">planned work</div></div>
     <div class="kpi"><div class="v" style="color:${dcp?"var(--red)":"inherit"}">${dcp}${prev?delta(dcp,prev.d):""}</div><div class="l">near active DC sites</div></div>
     <div class="kpi"><div class="v" style="color:${ok===feeds.length?"var(--green)":"var(--amber)"}">${ok}/${feeds.length}</div><div class="l">feeds healthy</div></div>`;
 }
@@ -635,14 +656,17 @@ function mixbar(){
   const bar=document.getElementById("mixbar"),leg=document.getElementById("mixlegend");
   if(!bar||!LATEST) return;
   const os=LATEST.outages||[]; const n=os.length||1;
-  const dc=os.filter(o=>o.dc_flag).length;
-  const ctx=os.filter(o=>!o.dc_flag&&String(o.classification||"").startsWith("NEAR OPERATING")).length;
-  const w=os.filter(o=>o.weather_flag&&!o.dc_flag).length;
-  const f=n-dc-ctx-w;
+  const isPlan=o=>o.planned_flag||String(o.classification||"").startsWith("PLANNED WORK");
+  const pl=os.filter(isPlan).length;
+  const dc=os.filter(o=>o.dc_flag&&!isPlan(o)).length;
+  const ctx=os.filter(o=>!o.dc_flag&&!isPlan(o)&&String(o.classification||"").startsWith("NEAR OPERATING")).length;
+  const w=os.filter(o=>o.weather_flag&&!o.dc_flag&&!isPlan(o)).length;
+  const f=n-dc-ctx-w-pl;
   const seg=(x,c)=>x?`<div style="width:${100*x/n}%;background:${c}">${x>n*0.07?Math.round(100*x/n)+"%":""}</div>`:"";
-  bar.innerHTML=seg(w,RAW.blue)+seg(f,RAW.amber)+seg(ctx,RAW.pink)+seg(dc,RAW.red);
+  bar.innerHTML=seg(w,RAW.blue)+seg(f,RAW.amber)+seg(ctx,RAW.pink)+seg(dc,RAW.red)+seg(pl,"#22d3ee");
   leg.innerHTML=`<span><i style="background:${RAW.blue}"></i>weather-likely ${w}</span>
     <span><i style="background:${RAW.amber}"></i>fair-weather ${f}</span>
+    <span><i style="background:#22d3ee"></i>planned work ${pl} (excluded from evidence)</span>
     <span><i style="background:${RAW.pink}"></i>operating-DC context ${ctx}</span>
     <span><i style="background:${RAW.red}"></i>active-DC proximate ${dc}</span>`;
 }
@@ -806,6 +830,7 @@ function renderArea(){
       .slice(0,5).map(o=>`<div class="longrow"><span><span class="okdot" style="background:${cRaw(o)}"></span>
       ${esc(o.region)} · ${esc((o.classification||"").toLowerCase())}</span>
       <b>${fmt(o.customers)}</b></div>`).join("")+`</div>`:""}
+    ${util?actionPanel(util[0]):""}
     <div class="caveat">Counts are unique outage incidents recorded by GRIDWATCH in the last
       ${HOT?HOT.window_days:30} days within ${KM} km — not an official utility figure.
       Percentile compares this area's busiest grid cell against every cell tracked.</div>`;
@@ -847,6 +872,153 @@ function renderCauses(){
     +`<div class="caveat">What utilities themselves report, ${HOT.window_days}-day window.
       Most report a generic "unplanned" — the detail level is the utilities' choice, not ours.
       <b>Planned work is excluded from all evidence math</b>: it happens in fair weather by design.</div>`;
+}
+/* ============ historical playback ============ */
+let PB={on:false,dates:[],idx:0,timer:null,cache:{},layer:null};
+const PB_CLS=[["weather-likely","#4c9aff"],["fair-weather","#f5a623"],
+              ["near active DC","#ff5c5c"],["operating-DC context","#f472b6"],
+              ["planned work","#22d3ee"]];
+function pbInit(){
+  PB.layer=PB.layer||L.layerGroup();
+  PB.dates=((INDEX&&INDEX.days)||[]).map(d=>d.date);
+  const sl=document.getElementById("playslider");
+  sl.max=Math.max(0,PB.dates.length-1); sl.value=sl.max; PB.idx=+sl.max;
+}
+async function pbLoad(i){
+  const date=PB.dates[i]; if(!date) return;
+  const st=document.getElementById("playstats");
+  document.getElementById("playdate").textContent=date;
+  let j=PB.cache[date];
+  if(!j){
+    st.textContent="loading "+date+"…";
+    try{
+      j=await fetch(`data/daily/${date}.json`).then(r=>{if(!r.ok)throw 0;return r.json();});
+      PB.cache[date]=j;
+    }catch(e){
+      st.innerHTML=`<span style="color:var(--amber)">No playback file for ${esc(date)} —
+        these are generated by the poller for the last 30 days.</span>`;
+      PB.layer.clearLayers(); return;
+    }
+  }
+  PB.layer.clearLayers();
+  const rows=j.o||[];
+  let cust=0, durs=[], cls=[0,0,0,0,0];
+  const causes={};
+  for(const r of rows){
+    const [la,lo,c,ri,ci,x,m]=r;
+    cust+=c||0; cls[x]=(cls[x]||0)+1;
+    if(m>=0) durs.push(m);
+    const cname=j.causes[ci]||"?"; causes[cname]=(causes[cname]||0)+1;
+    const col=PB_CLS[x]?PB_CLS[x][1]:"#8a93a6";
+    L.circleMarker([la,lo],{radius:Math.min(15,3.5+Math.sqrt(c||1)/2.4),
+      color:col,fillColor:col,fillOpacity:.6,weight:1})
+      .bindPopup(`<div class="pop-t">${esc(j.regions[ri]||"?")} · ${esc(date)}</div>
+        <div class="pop-r"><span>customers</span><b>${fmt(c)}</b></div>
+        <div class="pop-r"><span>type</span><b>${PB_CLS[x]?PB_CLS[x][0]:"?"}</b></div>
+        <div class="pop-r"><span>cause</span><b>${esc(cname)}</b></div>
+        <div class="pop-r"><span>restored in</span><b>${m>=0?(m>=60?Math.floor(m/60)+"h "+(m%60)+"m":m+" min"):"still open / unknown"}</b></div>`)
+      .addTo(PB.layer);
+  }
+  const avg=durs.length?Math.round(durs.reduce((a,b)=>a+b,0)/durs.length):null;
+  const med=durs.length?durs.slice().sort((a,b)=>a-b)[Math.floor(durs.length/2)]:null;
+  const topc=Object.entries(causes).sort((a,b)=>b[1]-a[1])[0];
+  st.innerHTML=`<b>${fmt(rows.length)}</b> incidents ·
+    <b>${fmt(cust)}</b> customers ·
+    avg restoration <b>${avg!=null?(avg>=60?Math.floor(avg/60)+"h "+(avg%60)+"m":avg+" min"):"—"}</b>
+    ${med!=null?`(median ${med>=60?Math.floor(med/60)+"h "+(med%60)+"m":med+" min"})`:""}
+    ${topc?`· top cause <b>${esc(topc[0])}</b>`:""}
+    <br>${PB_CLS.map((c,i)=>cls[i]?`<span style="margin-right:12px">
+      <i style="display:inline-block;width:9px;height:9px;border-radius:50%;
+      background:${c[1]};margin-right:4px"></i>${c[0]} ${fmt(cls[i])}</span>`:"").join("")}`;
+}
+function pbEnter(){
+  PB.on=true; pbInit();
+  document.getElementById("playbar").style.display="";
+  document.getElementById("histbtn").classList.add("on");
+  document.getElementById("legend").style.display="none";
+  map.removeLayer(outLayer); map.addLayer(PB.layer);
+  pbLoad(PB.idx);
+}
+function pbExit(){
+  PB.on=false; pbPause();
+  document.getElementById("playbar").style.display="none";
+  document.getElementById("histbtn").classList.remove("on");
+  document.getElementById("legend").style.display="";
+  if(map.hasLayer(PB.layer)) map.removeLayer(PB.layer);
+  PB.layer.clearLayers();
+  map.addLayer(outLayer);
+}
+function pbPause(){
+  if(PB.timer){clearInterval(PB.timer);PB.timer=null;}
+  const b=document.getElementById("playbtn"); if(b) b.textContent="▶";
+}
+function pbPlay(){
+  const b=document.getElementById("playbtn");
+  if(PB.timer){pbPause();return;}
+  b.textContent="⏸";
+  PB.timer=setInterval(()=>{
+    PB.idx=(PB.idx+1)%PB.dates.length;
+    document.getElementById("playslider").value=PB.idx;
+    pbLoad(PB.idx);
+  },1600);
+}
+function wirePlayback(){
+  document.getElementById("histbtn").onclick=()=>PB.on?pbExit():pbEnter();
+  document.getElementById("playclose").onclick=pbExit;
+  document.getElementById("playbtn").onclick=pbPlay;
+  document.getElementById("playslider").oninput=e=>{
+    pbPause(); PB.idx=+e.target.value; pbLoad(PB.idx);};
+}
+/* ============ who to contact ============ */
+const REGULATOR={
+ OH:["Public Utilities Commission of Ohio (PUCO)","https://puco.ohio.gov/"],
+ PA:["Pennsylvania PUC","https://www.puc.pa.gov/"],
+ NJ:["NJ Board of Public Utilities","https://www.nj.gov/bpu/"],
+ MD:["Maryland Public Service Commission","https://www.psc.state.md.us/"],
+ "MD/WV":["Maryland PSC / WV PSC","https://www.psc.state.md.us/"],
+ DC:["DC Public Service Commission","https://dcpsc.org/"],
+ DE:["Delaware Public Service Commission","https://depsc.delaware.gov/"],
+ VA:["Virginia State Corporation Commission","https://www.scc.virginia.gov/"],
+ "VA/WV":["Virginia SCC / West Virginia PSC","https://www.scc.virginia.gov/"],
+ NC:["North Carolina Utilities Commission","https://www.ncuc.gov/"],
+ SC:["South Carolina PSC","https://psc.sc.gov/"],
+ GA:["Georgia Public Service Commission","https://psc.ga.gov/"],
+ IN:["Indiana Utility Regulatory Commission","https://www.in.gov/iurc/"],
+ KY:["Kentucky Public Service Commission","https://psc.ky.gov/"],
+ NY:["NY Dept of Public Service","https://dps.ny.gov/"],
+ MA:["Massachusetts Dept of Public Utilities","https://www.mass.gov/orgs/department-of-public-utilities"],
+ RI:["Rhode Island PUC","https://ripuc.ri.gov/"],
+ "CT/MA/NH":["CT PURA / MA DPU / NH PUC","https://portal.ct.gov/pura"],
+};
+const UTILITY_NAME={OH:"FirstEnergy (Ohio Edison / Illuminating / Toledo Edison)",
+ "OH-AEP":"AEP Ohio","OH-AES":"AES Ohio","OH-DUKE":"Duke Energy Ohio",
+ "PA-NY":"FirstEnergy PA (Met-Ed / Penelec / Penn Power / West Penn)",
+ "PA-PPL":"PPL Electric Utilities",PECO:"PECO Energy",
+ NJ:"JCP&L (FirstEnergy)","NJ-PSEG":"PSE&G","NJ-ACE":"Atlantic City Electric",
+ "MD-WV":"Potomac Edison / Mon Power (FirstEnergy)",BGE:"Baltimore Gas & Electric",
+ "DC-PEPCO":"Pepco","DE-DELMARVA":"Delmarva Power","VA-DOM":"Dominion Energy Virginia",
+ "VA-NOVEC":"NOVEC","VAWV-APCO":"Appalachian Power","NC-DEC":"Duke Energy Carolinas",
+ "NC-DEP":"Duke Energy Progress","SC-DOM":"Dominion Energy South Carolina",
+ "NY-NGRID":"National Grid NY","NY-CENHUD":"Central Hudson","MA-NGRID":"National Grid MA",
+ "NE-EVERSOURCE":"Eversource","IN-DUKE":"Duke Energy Indiana","IN-IM":"Indiana Michigan Power",
+ "KY-LGE":"Louisville Gas & Electric","KY-KU":"Kentucky Utilities","KY-AEP":"Kentucky Power",
+ "GA-GPC":"Georgia Power","RI-RIE":"Rhode Island Energy"};
+function actionPanel(region){
+  const util=UTILITY_NAME[region]||region;
+  const st=STATE_OF[region]||"";
+  const reg=REGULATOR[st];
+  return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+    <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);
+      margin-bottom:6px">If your power keeps going out</div>
+    <div class="longrow"><span><b>Your utility:</b> ${esc(util)}</span>
+      <span class="meta">report outages &amp; ask for the cause on your street</span></div>
+    ${reg?`<div class="longrow"><span><b>Your regulator:</b>
+      <a href="${reg[1]}" target="_blank" rel="noopener">${esc(reg[0])}</a></span>
+      <span class="meta">files formal complaints about reliability</span></div>`:""}
+    <div class="caveat">Utilities answer to the state commission, and repeated
+      reliability complaints become part of the public docket record — which is
+      where rate and performance decisions actually get argued. Regulator links are
+      best-effort; if one has moved, search the commission by name.</div></div>`;
 }
 function renderStrain(){
   const el=document.getElementById("straincard"),wrap=document.getElementById("strainwrap");
@@ -1258,7 +1430,7 @@ document.addEventListener("keydown",e=>{
   renderStrain();renderNyiso();renderEia();renderFlows();renderWatch();renderBurden();
   renderPipeline();loadEvidence(30);
   ageTick();setInterval(ageTick,30000);
-  renderCauses();
+  renderCauses();wirePlayback();
   document.getElementById("zipgo").onclick=zipLookup;
   document.getElementById("zipinput").addEventListener("keydown",
     e=>{if(e.key==="Enter") zipLookup();});

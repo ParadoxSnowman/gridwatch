@@ -2811,6 +2811,128 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
           f"+ history/{day}.ndjson")
 
 
+def _parse_etr(s):
+    """Utility ETR strings are ISO timestamps ('...Z' or with an offset) plus
+    an 'ETR-EXP' sentinel meaning the estimate already lapsed."""
+    s = str(s or "").strip()
+    if not s or s.upper().startswith("ETR-EXP"):
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ",
+                "%Y-%m-%d %H:%M:%S"):
+        try:
+            d = datetime.strptime(s, fmt)
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _emit_accountability(emit_dir, disc, spans, latest_ts):
+    """The disclosure + promise-keeping scorecard.
+
+    Two things no regulator publishes: (1) how much a monopoly actually tells
+    the public about an outage — cause, estimated restoration, crew status, a
+    usable id — and (2) whether the estimate it does give turns out to be true.
+    Both are computed from what the utilities themselves publish, so the
+    comparison is theirs, not ours.
+    """
+    from collections import Counter, defaultdict
+    etr_stat = defaultdict(lambda: {"n": 0, "ontime": 0, "err": [],
+                                    "expired": 0})
+    cmi = defaultdict(lambda: {"cmi": 0, "inc": 0, "cust": 0})
+    chronic = defaultdict(lambda: {"inc": 0, "cmi": 0, "cust": 0,
+                                   "region": "?", "lat": 0, "lon": 0})
+    for s in spans:
+        reg = s.get("r", "?")
+        resolved = s["l"] < latest_ts
+        mins = None
+        if resolved:
+            try:
+                mins = (datetime.fromisoformat(s["l"])
+                        - datetime.fromisoformat(s["f"])).total_seconds() / 60
+            except ValueError:
+                mins = None
+        if mins is not None:
+            c = cmi[reg]
+            c["cmi"] += (s.get("c") or 0) * mins
+            c["inc"] += 1
+            c["cust"] += s.get("c") or 0
+            key = (round(s["lat"], 2), round(s["lon"], 2))
+            ch = chronic[key]
+            ch["inc"] += 1
+            ch["cmi"] += (s.get("c") or 0) * mins
+            ch["cust"] += s.get("c") or 0
+            ch["region"] = reg
+            ch["lat"], ch["lon"] = key
+        promised = _parse_etr(s.get("etr"))
+        if str(s.get("etr") or "").upper().startswith("ETR-EXP"):
+            etr_stat[reg]["expired"] += 1
+        if promised is not None and resolved:
+            try:
+                actual = datetime.fromisoformat(s["l"])
+            except ValueError:
+                continue
+            e = etr_stat[reg]
+            e["n"] += 1
+            delta = (actual - promised).total_seconds() / 60
+            e["err"].append(delta)
+            if delta <= 0:
+                e["ontime"] += 1
+    def grade(d):
+        n = max(1, d["n"])
+        pts = (30 * d["cause"] / n + 25 * d["etr"] / n + 15 * d["crew"] / n
+               + 20 * (0 if d["synth"] / n > 0.5 else 1) + 10)
+        return pts
+    utils = []
+    for reg, d in disc.items():
+        n = max(1, d["n"])
+        p = grade(d)
+        letter = ("A" if p >= 90 else "B" if p >= 78 else "C" if p >= 65
+                  else "D" if p >= 50 else "F")
+        e = etr_stat.get(reg)
+        errs = sorted(e["err"]) if e and e["err"] else []
+        med = errs[len(errs) // 2] if errs else None
+        utils.append({
+            "region": reg, "records": d["n"], "score": round(p),
+            "grade": letter,
+            "cause_pct": round(100 * d["cause"] / n),
+            "etr_pct": round(100 * d["etr"] / n),
+            "crew_pct": round(100 * d["crew"] / n),
+            "stable_id": d["synth"] / n <= 0.5,
+            "etr_n": e["n"] if e else 0,
+            "etr_ontime_pct": (round(100 * e["ontime"] / e["n"])
+                               if e and e["n"] else None),
+            "etr_median_err_min": (round(med) if med is not None else None),
+            "etr_expired": e["expired"] if e else 0,
+        })
+    utils.sort(key=lambda x: -x["score"])
+    cmi_rows = [{"region": r, "cmi": round(v["cmi"]), "incidents": v["inc"],
+                 "customers": v["cust"],
+                 "avg_min": round(v["cmi"] / v["cust"]) if v["cust"] else None}
+                for r, v in cmi.items()]
+    cmi_rows.sort(key=lambda x: -x["cmi"])
+    ch_rows = [dict(v) for v in chronic.values() if v["inc"] >= 3]
+    for c in ch_rows:
+        c["cmi"] = round(c["cmi"])
+    ch_rows.sort(key=lambda x: -x["inc"])
+    with open(os.path.join(emit_dir, "accountability.json"), "w") as f:
+        json.dump({"generated_at": datetime.now(timezone.utc).isoformat(
+                       timespec="seconds"),
+                   "utilities": utils, "cmi": cmi_rows,
+                   "chronic": ch_rows[:200]}, f, separators=(",", ":"))
+    best = utils[0] if utils else None
+    worst = utils[-1] if utils else None
+    print(f"[i] accountability: {len(utils)} utilities graded "
+          f"(best {best['region']} {best['grade']}, "
+          f"worst {worst['region']} {worst['grade']}), "
+          f"{len(ch_rows)} chronic locations")
+    return True
+
+
 def _emit_playback(emit_dir, hist_dir, dates):
     """Compact per-day incident files for map playback.
 
@@ -2823,6 +2945,7 @@ def _emit_playback(emit_dir, hist_dir, dates):
     """
     GAP_HOURS = 6
     spans, closed = {}, []
+    disc = {}
     for date in dates:
         p = os.path.join(hist_dir, f"{date}.ndjson")
         if not os.path.exists(p):
@@ -2838,6 +2961,22 @@ def _emit_playback(emit_dir, hist_dir, dates):
                 la, lo = r.get("lat"), r.get("lon")
                 if la is None or lo is None:
                     continue
+                reg = r.get("region", "?")
+                dd = disc.setdefault(reg, {"n": 0, "cause": 0, "etr": 0,
+                                           "crew": 0, "synth": 0, "last": ""})
+                dd["n"] += 1
+                if str(r.get("cause") or "").strip():
+                    dd["cause"] += 1
+                _e = str(r.get("etr") or "").strip()
+                if _e:
+                    dd["etr"] += 1
+                if str(r.get("crew_status") or "").strip():
+                    dd["crew"] += 1
+                _oid = str(r.get("outage_id") or "")
+                if not _oid or len(_oid) <= 3 or SYNTHETIC_ID.match(_oid):
+                    dd["synth"] += 1
+                if r.get("polled_at", "") > dd["last"]:
+                    dd["last"] = r.get("polled_at", "")
                 k = stable_key(r)
                 t = r.get("polled_at", "")
                 s = spans.get(k)
@@ -2864,7 +3003,7 @@ def _emit_playback(emit_dir, hist_dir, dates):
                            3 if str(r.get("classification", "")
                                     ).startswith("NEAR OPERATING") else
                            0 if r.get("weather_flag") else 1)
-                    spans[k] = {"d": date, "lat": round(float(la), 4),
+                    spans[k] = {"etr": _e, "d": date, "lat": round(float(la), 4),
                                 "lon": round(float(lo), 4),
                                 "c": r.get("customers") or 0,
                                 "r": r.get("region", "?"), "k": cat,
@@ -2875,6 +3014,8 @@ def _emit_playback(emit_dir, hist_dir, dates):
                     if t > s["l"]:
                         s["l"] = t
                     s["c"] = max(s["c"], r.get("customers") or 0)
+                    if not s.get("etr") and _e:
+                        s["etr"] = _e
     all_spans = list(spans.values()) + closed
     latest_ts = max((s["l"] for s in all_spans), default="")
     byday = {}
@@ -2902,6 +3043,10 @@ def _emit_playback(emit_dir, hist_dir, dates):
             json.dump({"date": date, "regions": regs, "causes": cats,
                        "o": rows}, f, separators=(",", ":"))
         total += len(rows)
+    try:
+        _emit_accountability(emit_dir, disc, all_spans, latest_ts)
+    except Exception as e:
+        print(f"[!] accountability emit failed (non-fatal): {e}")
     avail = sorted(byday)
     with open(os.path.join(out_dir, "index.json"), "w") as f:
         json.dump({"dates": avail,

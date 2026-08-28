@@ -87,7 +87,11 @@ tbody tr:hover{background:var(--panel2)}
 /* Esri's canvas is a mid-gray; crush it to near-black so outage colors pop
    the way they did on the old CARTO dark tiles. Labels are a separate layer
    and stay unfiltered so place names remain readable. */
-.basemap-dark{filter:brightness(.42) contrast(1.25) saturate(.5)}
+/* brightness alone crushed the canvas into the page background and left the
+   map looking empty. Dropping brightness while RAISING contrast keeps the
+   backdrop near-black but pushes roads/boundaries back into view — which is
+   what CARTO's dark_all actually did. */
+.basemap-dark{filter:brightness(.7) contrast(1.5) saturate(.55)}
 .osm-dark{filter:invert(1) hue-rotate(180deg) brightness(.55) contrast(1.15) saturate(.5)}
 #maptoggle{position:absolute;top:12px;left:12px;z-index:1000;padding:4px 11px;border-radius:14px;
   font-size:11.5px;cursor:pointer;background:rgba(18,21,28,.9);border:1px solid var(--line);
@@ -200,7 +204,13 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
 <!-- ============ LIVE ============ -->
 <div id="tab-live">
   <div class="card" id="areawrap" style="display:none;border-color:var(--accent)">
-    <h2 id="areatitle">Your area</h2><div id="areacard"></div></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <h2 id="areatitle" style="margin:0;flex:1">Your area</h2>
+      <button onclick="clearArea()" title="close"
+        style="padding:3px 11px;border-radius:14px;font-size:12px;cursor:pointer;
+        background:var(--panel2);border:1px solid var(--red);color:var(--red)">✕</button>
+    </div>
+    <div id="areacard" style="margin-top:10px"></div></div>
   <div class="kpis" id="kpis"></div>
   <div class="grid">
     <div>
@@ -648,12 +658,12 @@ function radarStop(){
   if(map.hasLayer(radarFallback)) map.removeLayer(radarFallback);
   radarClock().textContent="";
 }
-const MAP_MODES=[["black",".42"],["dark",".62"],["light","1"]];
+const MAP_MODES=[["black",".7"],["dark",".85"],["light","1"]];
 let mapMode=0;
 function applyMapMode(){
   const v=MAP_MODES[mapMode][1];
   document.querySelectorAll(".basemap-dark").forEach(el=>{
-    el.style.filter=`brightness(${v}) contrast(${v==="1"?"1":"1.25"}) saturate(.5)`;});
+    el.style.filter=`brightness(${v}) contrast(${v==="1"?"1":"1.5"}) saturate(.55)`;});
   const b=document.getElementById("maptoggle");
   if(b) b.textContent="◐ "+MAP_MODES[mapMode][0];
   try{sessionStorage.setItem("gw_mapmode",mapMode);}catch(e){}
@@ -804,6 +814,19 @@ async function zipLookup(){
       US ZIP or the lookup service is unreachable. You can also click any point on the map.</div>`;
   }
   btn.disabled=false; btn.textContent="check my area";
+}
+function gotoMap(lat,lon,z){
+  map.setView([lat,lon],z||13);
+  document.querySelector('.tab[data-tab="live"]').click();
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+function clearArea(){
+  AREA=null;
+  areaLayer.clearLayers();
+  const w=document.getElementById("areawrap"); if(w) w.style.display="none";
+  const i=document.getElementById("zipinput"); if(i) i.value="";
+  if(location.hash.indexOf("zip=")>-1)
+    history.replaceState(null,"",location.pathname+location.search);
 }
 function areaStats(lat,lon,km){
   // pull the precomputed 30-day grid cells inside the radius
@@ -1192,11 +1215,14 @@ function renderAccount(){
       <b>separate</b> outages in the window — the repeat-failure list utilities keep internally as
       "worst performing circuits" and never publish. Click a row to zoom.</div>
       <table><thead><tr><th>location</th><th>utility</th><th class="n">separate outages</th>
-      <th class="n">customer-minutes</th></tr></thead><tbody>
-      ${ACCT.chronic.slice(0,25).map(x=>`<tr style="cursor:pointer"
-        onclick="map.setView([${x.lat},${x.lon}],13);document.querySelector('.tab[data-tab=live]').click()">
+      <th class="n">customer-minutes</th><th></th></tr></thead><tbody>
+      ${ACCT.chronic.slice(0,25).map(x=>`<tr>
         <td>${x.lat.toFixed(2)}, ${x.lon.toFixed(2)}</td><td>${esc(x.region)}</td>
-        <td class="n"><b>${x.inc}</b></td><td class="n">${fmt(x.cmi)}</td></tr>`).join("")}
+        <td class="n"><b>${x.inc}</b></td><td class="n">${fmt(x.cmi)}</td>
+        <td class="n"><button onclick="gotoMap(${x.lat},${x.lon},13)"
+          style="padding:2px 9px;border-radius:12px;font-size:11px;cursor:pointer;
+          background:var(--panel2);border:1px solid var(--line);color:var(--dim)">
+          view</button></td></tr>`).join("")}
       </tbody></table>`;
   }
 }

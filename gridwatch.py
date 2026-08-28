@@ -2811,6 +2811,88 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
           f"+ history/{day}.ndjson")
 
 
+def _emit_playback(emit_dir, hist_dir, dates):
+    """Compact per-day incident files for map playback.
+
+    Raw history is 6-15 MB/day — far too heavy for a browser. Here each
+    incident is reduced to one row: position, peak customers, region, cause,
+    class, and restoration minutes (first-seen to last-seen). ~200 KB/day, so
+    scrubbing the timeline stays instant. Incidents are filed under the day
+    they FIRST appeared, and duration is measured across the whole window so an
+    outage spanning midnight is still one incident.
+    """
+    spans = {}
+    for date in dates:
+        p = os.path.join(hist_dir, f"{date}.ndjson")
+        if not os.path.exists(p):
+            continue
+        with open(p) as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                la, lo = r.get("lat"), r.get("lon")
+                if la is None or lo is None:
+                    continue
+                k = stable_key(r)
+                t = r.get("polled_at", "")
+                s = spans.get(k)
+                if s is None:
+                    cat = r.get("cause_category")
+                    if cat is None:
+                        cat = cause_category(r.get("cause", ""))[0]
+                    planned = bool(r.get("planned_flag")) or cat == "planned work"
+                    cls = (4 if planned else
+                           2 if r.get("dc_flag") else
+                           3 if str(r.get("classification", "")
+                                    ).startswith("NEAR OPERATING") else
+                           0 if r.get("weather_flag") else 1)
+                    spans[k] = {"d": date, "lat": round(float(la), 4),
+                                "lon": round(float(lo), 4),
+                                "c": r.get("customers") or 0,
+                                "r": r.get("region", "?"), "k": cat,
+                                "x": cls, "f": t, "l": t}
+                else:
+                    if t < s["f"]:
+                        s["f"] = t
+                    if t > s["l"]:
+                        s["l"] = t
+                    s["c"] = max(s["c"], r.get("customers") or 0)
+    latest_ts = max((s["l"] for s in spans.values()), default="")
+    byday = {}
+    for s in spans.values():
+        mins = None
+        if s["l"] < latest_ts:          # disappeared => restored
+            try:
+                mins = int((datetime.fromisoformat(s["l"])
+                            - datetime.fromisoformat(s["f"])).total_seconds()
+                           / 60)
+            except ValueError:
+                mins = None
+        byday.setdefault(s["d"], []).append(s | {"m": mins})
+    out_dir = os.path.join(emit_dir, "daily")
+    os.makedirs(out_dir, exist_ok=True)
+    total = 0
+    for date, items in byday.items():
+        regs = sorted({i["r"] for i in items})
+        cats = sorted({i["k"] for i in items})
+        ri = {r: n for n, r in enumerate(regs)}
+        ci = {c: n for n, c in enumerate(cats)}
+        rows = [[i["lat"], i["lon"], i["c"], ri[i["r"]], ci[i["k"]], i["x"],
+                 i["m"] if i["m"] is not None else -1] for i in items]
+        with open(os.path.join(out_dir, f"{date}.json"), "w") as f:
+            json.dump({"date": date, "regions": regs, "causes": cats,
+                       "o": rows}, f, separators=(",", ":"))
+        total += len(rows)
+    resolved = [s for s in spans.values() if s["l"] < latest_ts]
+    print(f"[i] playback: {len(byday)} day files, {total:,} incidents "
+          f"({len(resolved):,} with restoration times)")
+    return byday
+
+
 def _emit_hotspots(emit_dir, hist_dir, days, window=30, cell=0.05):
     """Spatial rollup of history into ~5km grid cells so the site can answer
     'what happens where I live'. Each cell carries unique-outage count, total
@@ -2878,6 +2960,10 @@ def _emit_hotspots(emit_dir, hist_dir, days, window=30, cell=0.05):
                     "worst_day": worst[0], "worst_n": worst[1]})
     out.sort(key=lambda x: -x["n"])
     out = out[:4000]
+    try:
+        _emit_playback(emit_dir, hist_dir, use)
+    except Exception as e:
+        print(f"[!] playback emit failed (non-fatal): {e}")
     payload = {"generated_at": datetime.now(timezone.utc).isoformat(
                    timespec="seconds"),
                "window_days": len(use), "cell_deg": cell,

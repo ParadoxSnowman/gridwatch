@@ -71,15 +71,17 @@
     },
     {
       "name": "OH-AEP",
-      "provider": "ifactor",
-      "base": "https://d6ss517do1xkp.cloudfront.net",
       "entry": "https://outagemap.aepohio.com/",
+      "instance_id": "9c0735d8-b721-4dce-b80b-558e98ce1083",
+      "view_id": "9b2feb80-69f8-4035-925e-f2acbcf1728e",
+      "max_tiles": 30000,
       "bbox": {
         "west": -84.9,
         "south": 38.3,
         "east": -80.6,
         "north": 41.4
-      }
+      },
+      "_note": "2026-08-28: migrated off the legacy iFactor CloudFront endpoint, which had been serving a frozen 2025 snapshot (100% identical positions day over day). AEP now runs on KUBRA stormcenter like most other feeds. Layer left unpinned so it auto-detects; pin it from the first poll's log if you want to skip the sweep."
     },
     {
       "name": "OH-AES",
@@ -336,39 +338,42 @@
       "provider": "pplomap",
       "opco": "LGE",
       "entry": "https://lge-ku.com/storm",
-      "_note": "Louisville Gas & Electric via PPL OMAP",
+      "_note": "DISABLED 2026-08-28: omap.prod.pplweb.com ignores the opco parameter and returns Pennsylvania data for opco=LGE, so this region only ever produced PA outages that its Kentucky bbox filtered to zero. LG&E has its own outage map \u2014 capture its data URL (lge-ku.com storm center > DevTools > Network) and re-enable.",
       "bbox": {
         "west": -86.2,
         "south": 37.6,
         "east": -85.1,
         "north": 38.65
-      }
+      },
+      "enabled": false
     },
     {
       "name": "KY-KU",
       "provider": "pplomap",
       "opco": "KU",
       "entry": "https://lge-ku.com/storm",
-      "_note": "Kentucky Utilities (Lexington + central/east KY). 'KY' opco skipped: likely combined alias of LGE+KU \u2014 adding it would double-count.",
+      "_note": "DISABLED 2026-08-28: same as KY-LGE \u2014 opco=KU returns Pennsylvania data. Kentucky Utilities needs its own endpoint captured before this can report anything.",
       "bbox": {
         "west": -86.6,
         "south": 36.5,
         "east": -82.3,
         "north": 39.1
-      }
+      },
+      "enabled": false
     },
     {
       "name": "RI-RIE",
       "provider": "pplomap",
       "opco": "RI",
       "entry": "https://www.rienergy.com/outages",
-      "_note": "Rhode Island Energy via PPL OMAP",
+      "_note": "DISABLED 2026-08-28: opco=RI returns Pennsylvania data. Rhode Island Energy runs its own map (rienergy.com) \u2014 capture that endpoint to re-enable.",
       "bbox": {
         "west": -71.95,
         "south": 41.1,
         "east": -71.05,
         "north": 42.05
-      }
+      },
+      "enabled": false
     },
     {
       "name": "IN-IM",
@@ -413,6 +418,20 @@
         "east": -80.7,
         "north": 35.1
       }
+    },
+    {
+      "name": "KY-LGEKU",
+      "entry": "https://lge-ku.com/outages",
+      "instance_id": "877fd1e9-4162-473f-b782-d8a53a85326b",
+      "view_id": "a6cee9e4-312b-4b77-9913-2ae371eb860d",
+      "max_tiles": 30000,
+      "bbox": {
+        "west": -86.6,
+        "south": 36.5,
+        "east": -82.3,
+        "north": 39.15
+      },
+      "_note": "2026-08-28: KUBRA currentState captured from the LG&E/KU storm center. LG&E (Louisville) and Kentucky Utilities (central/eastern KY) share one map, so this single region replaces the parked KY-LGE and KY-KU opco phantoms. ASSUMPTION: this capture came from lge-ku.com \u2014 if the first poll returns zero outages, it may actually be the Rhode Island Energy capture; swap the bbox to RI (west -71.95 south 41.1 east -71.05 north 42.05) and rename."
     }
   ],
   "tile_workers": 8,

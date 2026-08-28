@@ -181,6 +181,7 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
     <div class="tab" data-tab="history">History</div>
     <div class="tab" data-tab="evidence">Evidence</div>
     <div class="tab" data-tab="burden">Burden</div>
+    <div class="tab" data-tab="account">Accountability</div>
     <a class="tab" href="about.html" style="text-decoration:none">Methodology ↗</a>
   </nav>
 </header>
@@ -291,6 +292,24 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
   </div>
 </div>
 
+<div id="tab-account" style="display:none">
+  <div class="verdict nosig" style="margin-bottom:14px">
+    Two things no regulator publishes: how much each monopoly actually tells you about an
+    outage, and whether the estimate it gives turns out to be true. Both are measured from
+    what the utilities themselves publish — the comparison is theirs, not ours.
+  </div>
+  <div class="card"><h2>Disclosure scorecard — what your utility tells you</h2>
+    <div id="disccard">loading…</div></div>
+  <div class="grid">
+    <div><div class="card"><h2>Do they keep their own promises? (ETR accuracy)</h2>
+      <div id="etrcard">—</div></div></div>
+    <div><div class="card"><h2>Customer-minutes interrupted</h2>
+      <div id="cmicard">—</div></div></div>
+  </div>
+  <div class="card"><h2>Chronic locations — the worst repeat offenders</h2>
+    <div id="chroniccard">—</div></div>
+</div>
+
 <footer>
   GRIDWATCH · public-interest grid reliability instrument · Ohio → Georgia<br>
   data: <a href="data/latest.json">JSON</a> · <a href="data/latest.geojson">GeoJSON</a> ·
@@ -306,7 +325,7 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
 const REFRESH_MS = 2*60*1000;
 let LATEST=null,PREV=null,INDEX={},DUR=null,DCS=[],AUTO=[],INFRA=[],BURDEN=null,
     FLOWS=null,EIAD=null,STRAIN=null,NYF=null,DIGEST=null,
-    QUEUE=[],RETIRE=[],ALERTS=null,RELIAB=null,TRENDS=null,HOT=null,AREA=null,
+    QUEUE=[],RETIRE=[],ALERTS=null,RELIAB=null,TRENDS=null,HOT=null,AREA=null,ACCT=null,
     PL_SUBS=[],PL_PLANTS=[],BACKBONE=[],
     activeRegions=new Set(),currentView="live";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1037,10 +1056,102 @@ function actionPanel(region){
     ${reg?`<div class="longrow"><span><b>Your regulator:</b>
       <a href="${reg[1]}" target="_blank" rel="noopener">${esc(reg[0])}</a></span>
       <span class="meta">files formal complaints about reliability</span></div>`:""}
+    <div style="margin-top:8px"><button onclick="exportAreaCSV()"
+      style="padding:5px 13px;border-radius:16px;font-size:12px;cursor:pointer;
+      background:var(--panel2);border:1px solid var(--accent);color:var(--accent)">
+      ⤓ download this area's outage record (CSV)</button></div>
     <div class="caveat">Utilities answer to the state commission, and repeated
       reliability complaints become part of the public docket record — which is
       where rate and performance decisions actually get argued. Regulator links are
       best-effort; if one has moved, search the commission by name.</div></div>`;
+}
+function renderAccount(){
+  if(!ACCT) return;
+  const U=UTILITY_NAME, GC={A:"var(--green)",B:"#8ac926",C:"var(--amber)",D:"#fb923c",F:"var(--red)"};
+  const d=document.getElementById("disccard");
+  if(d){
+    d.innerHTML=`<div class="meta" style="margin-bottom:8px">Graded on what each feed publishes
+      per outage: a cause (30 pts), an estimated restoration time (25), crew status (15), and a
+      usable outage id that stays stable so events can be tracked (20).</div>
+      <table><thead><tr><th>utility</th><th>grade</th><th class="n">cause</th>
+      <th class="n">ETR</th><th class="n">crew</th><th class="n">trackable id</th></tr></thead>
+      <tbody>${ACCT.utilities.map(u=>`<tr>
+        <td>${esc(U[u.region]||u.region)}<div class="meta">${esc(u.region)}</div></td>
+        <td><span class="badge" style="background:${GC[u.grade]}22;color:${GC[u.grade]}">${u.grade}</span></td>
+        <td class="n" style="color:${u.cause_pct?"inherit":"var(--red)"}">${u.cause_pct}%</td>
+        <td class="n" style="color:${u.etr_pct?"inherit":"var(--red)"}">${u.etr_pct}%</td>
+        <td class="n" style="color:${u.crew_pct?"inherit":"var(--dim)"}">${u.crew_pct}%</td>
+        <td class="n">${u.stable_id?'<span style="color:var(--green)">yes</span>':'<span style="color:var(--red)">no</span>'}</td>
+        </tr>`).join("")}</tbody></table>
+      <div class="caveat">There is no federal standard for what a utility must show on its public
+        outage map, and it shows: the same kind of event produces completely different public
+        information depending on who owns the wire.</div>`;
+  }
+  const e=document.getElementById("etrcard");
+  if(e){
+    const rows=ACCT.utilities.filter(u=>u.etr_n>=20)
+      .sort((a,b)=>(b.etr_ontime_pct||0)-(a.etr_ontime_pct||0));
+    e.innerHTML=rows.length?`<div class="meta" style="margin-bottom:8px">Of outages where the
+      utility published an estimate and we saw it clear: how often power was back by the promised
+      time, and the median gap. Negative = restored early; positive = they missed their own
+      deadline.</div>
+      <table><thead><tr><th>utility</th><th class="n">on time</th><th class="n">median gap</th>
+      <th class="n">n</th></tr></thead><tbody>
+      ${rows.map(u=>`<tr><td>${esc(u.region)}</td>
+        <td class="n" style="color:${u.etr_ontime_pct>=80?"var(--green)":u.etr_ontime_pct>=60?"var(--amber)":"var(--red)"}">${u.etr_ontime_pct}%</td>
+        <td class="n" style="color:${(u.etr_median_err_min||0)>0?"var(--red)":"var(--dim)"}">
+          ${u.etr_median_err_min>0?"+":""}${u.etr_median_err_min} min</td>
+        <td class="n">${fmt(u.etr_n)}</td></tr>`).join("")}</tbody></table>
+      <div class="caveat">Utilities publishing no ETR cannot appear here — absence of a promise is
+        not the same as keeping one.</div>`
+      :`<div class="meta">Not enough resolved outages with published estimates yet.</div>`;
+  }
+  const c=document.getElementById("cmicard");
+  if(c&&ACCT.cmi){
+    const max=Math.max(...ACCT.cmi.map(x=>x.cmi),1);
+    c.innerHTML=`<div class="meta" style="margin-bottom:8px">Customers × minutes without power —
+      the numerator of the industry's own SAIDI metric, measured continuously instead of
+      self-reported once a year.</div>
+      ${ACCT.cmi.slice(0,12).map(x=>`<div class="longrow" style="border:0;padding:3px 0">
+        <span>${esc(x.region)}</span><b>${fmt(x.cmi)} <span class="meta">CMI · ${fmt(x.incidents)} incidents</span></b></div>
+        <div class="statebar" style="width:${Math.max(2,100*x.cmi/max)}%;margin-bottom:5px"></div>`).join("")}
+      <div class="caveat">A high figure can mean many outages, very long ones, or a dense service
+        territory — read it with the incident count.</div>`;
+  }
+  const ch=document.getElementById("chroniccard");
+  if(ch&&ACCT.chronic){
+    ch.innerHTML=`<div class="meta" style="margin-bottom:8px">Locations with the most
+      <b>separate</b> outages in the window — the repeat-failure list utilities keep internally as
+      "worst performing circuits" and never publish. Click a row to zoom.</div>
+      <table><thead><tr><th>location</th><th>utility</th><th class="n">separate outages</th>
+      <th class="n">customer-minutes</th></tr></thead><tbody>
+      ${ACCT.chronic.slice(0,25).map(x=>`<tr style="cursor:pointer"
+        onclick="map.setView([${x.lat},${x.lon}],13);document.querySelector('.tab[data-tab=live]').click()">
+        <td>${x.lat.toFixed(2)}, ${x.lon.toFixed(2)}</td><td>${esc(x.region)}</td>
+        <td class="n"><b>${x.inc}</b></td><td class="n">${fmt(x.cmi)}</td></tr>`).join("")}
+      </tbody></table>`;
+  }
+}
+function exportAreaCSV(){
+  if(!AREA||!HOT) return;
+  const KM=15;
+  const cells=(HOT.cells||[]).filter(c=>hav(AREA.lat,AREA.lon,c.lat,c.lon)<=KM).sort((a,b)=>b.n-a.n);
+  const live=((LATEST&&LATEST.outages)||[]).filter(o=>hav(AREA.lat,AREA.lon,o.lat,o.lon)<=KM);
+  const rows=[["GRIDWATCH outage evidence for ZIP "+AREA.zip+" ("+(AREA.name||"")+", "+(AREA.state||"")+")"],
+    ["generated",new Date().toISOString()],["window_days",HOT.window_days],["radius_km",KM],
+    ["source","https://paradoxsnowman.github.io/gridwatch/#zip="+AREA.zip],[],
+    ["HISTORICAL OUTAGE CLUSTERS (each row = ~5km area)"],
+    ["latitude","longitude","utility","outages","customer_events","fair_weather","planned_work",
+     "top_cause","worst_day","worst_day_outages"]];
+  for(const c of cells) rows.push([c.lat,c.lon,c.region,c.n,c.cust,c.fair,c.planned,c.top_cause,c.worst_day,c.worst_n]);
+  rows.push([],["CURRENTLY OUT"],["latitude","longitude","utility","customers","classification","cause"]);
+  for(const o of live) rows.push([o.lat,o.lon,o.region,o.customers,o.classification,o.cause||""]);
+  const csv=rows.map(r=>r.map(v=>{const s=String(v==null?"":v);
+    return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(",")).join("\n");
+  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  const a=document.createElement("a");
+  a.href=url; a.download=`gridwatch-${AREA.zip}-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
 }
 function renderStrain(){
   const el=document.getElementById("straincard"),wrap=document.getElementById("strainwrap");
@@ -1405,7 +1516,7 @@ function siteDeepLink(){
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   t.classList.add("active"); currentView=t.dataset.tab;
-  for(const id of ["live","history","evidence","burden"])
+  for(const id of ["live","history","evidence","burden","account"])
     document.getElementById("tab-"+id).style.display=id===currentView?"":"none";
   if(currentView==="live") setTimeout(()=>map.invalidateSize(),60);
 });
@@ -1445,6 +1556,7 @@ document.addEventListener("keydown",e=>{
   try{RELIAB=await fetch("data/reliability.json").then(r=>r.json());}catch(e){RELIAB=null;}
   try{TRENDS=await fetch("data/trends.json").then(r=>r.json());}catch(e){TRENDS=null;}
   try{HOT=await fetch("data/hotspots.json").then(r=>r.json());}catch(e){HOT=null;}
+  try{ACCT=await fetch("data/accountability.json").then(r=>r.json());}catch(e){ACCT=null;}
 
   drawDCs();drawInfra();buildSideRows();wireRadar();
   plot();kpis();mixbar();renderFeeds();renderStates();topEvents();regionChips();
@@ -1452,7 +1564,7 @@ document.addEventListener("keydown",e=>{
   renderStrain();renderNyiso();renderEia();renderFlows();renderWatch();renderBurden();
   renderPipeline();loadEvidence(30);
   ageTick();setInterval(ageTick,30000);
-  renderCauses();wirePlayback();
+  renderCauses();wirePlayback();renderAccount();
   document.getElementById("zipgo").onclick=zipLookup;
   document.getElementById("zipinput").addEventListener("keydown",
     e=>{if(e.key==="Enter") zipLookup();});

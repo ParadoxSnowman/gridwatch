@@ -84,7 +84,15 @@ tbody tr:hover{background:var(--panel2)}
 #mapwrap{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
 #map{height:72vh;min-height:460px;background:#0a0c10}
 .leaflet-container{background:#0a0c10;font:inherit}
-.osm-dark{filter:invert(1) hue-rotate(180deg) brightness(.82) contrast(1.08) saturate(.6)}
+/* Esri's canvas is a mid-gray; crush it to near-black so outage colors pop
+   the way they did on the old CARTO dark tiles. Labels are a separate layer
+   and stay unfiltered so place names remain readable. */
+.basemap-dark{filter:brightness(.42) contrast(1.25) saturate(.5)}
+.osm-dark{filter:invert(1) hue-rotate(180deg) brightness(.55) contrast(1.15) saturate(.5)}
+#maptoggle{position:absolute;top:12px;left:12px;z-index:1000;padding:4px 11px;border-radius:14px;
+  font-size:11.5px;cursor:pointer;background:rgba(18,21,28,.9);border:1px solid var(--line);
+  color:var(--dim)}
+#maptoggle:hover{border-color:var(--accent);color:var(--text)}
 .leaflet-popup-content-wrapper{background:var(--panel2);color:var(--text);
   border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .leaflet-popup-tip{background:var(--panel2)}
@@ -209,6 +217,7 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
           </div>
           <div id="playstats" class="meta" style="margin-top:6px">loading…</div>
         </div>
+        <button id="maptoggle" title="cycle basemap brightness">◐ map</button>
         <div id="legend"></div>
       </div>
       <div class="card" style="margin-top:14px"><h2>Outage mix</h2>
@@ -298,6 +307,8 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
     outage, and whether the estimate it gives turns out to be true. Both are measured from
     what the utilities themselves publish — the comparison is theirs, not ours.
   </div>
+  <div class="card" id="auditwrap" style="display:none"><h2>Our own data quality</h2>
+    <div id="auditcard"></div></div>
   <div class="card"><h2>Disclosure scorecard — what your utility tells you</h2>
     <div id="disccard">loading…</div></div>
   <div class="grid">
@@ -325,7 +336,7 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
 const REFRESH_MS = 2*60*1000;
 let LATEST=null,PREV=null,INDEX={},DUR=null,DCS=[],AUTO=[],INFRA=[],BURDEN=null,
     FLOWS=null,EIAD=null,STRAIN=null,NYF=null,DIGEST=null,
-    QUEUE=[],RETIRE=[],ALERTS=null,RELIAB=null,TRENDS=null,HOT=null,AREA=null,ACCT=null,
+    QUEUE=[],RETIRE=[],ALERTS=null,RELIAB=null,TRENDS=null,HOT=null,AREA=null,ACCT=null,AUDIT=null,
     PL_SUBS=[],PL_PLANTS=[],BACKBONE=[],
     activeRegions=new Set(),currentView="live";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -341,7 +352,7 @@ const map=L.map("map",{zoomControl:true,attributionControl:true}).setView([39.4,
    fallback if Esri ever errors out. No keys, no accounts, no vendor lock. */
 const baseEsri=L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-  {attribution:'Tiles &copy; Esri',maxZoom:16});
+  {attribution:'Tiles &copy; Esri',maxZoom:16,className:"basemap-dark"});
 const baseEsriLabels=L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
   {maxZoom:16,opacity:.85});
@@ -637,6 +648,23 @@ function radarStop(){
   if(map.hasLayer(radarFallback)) map.removeLayer(radarFallback);
   radarClock().textContent="";
 }
+const MAP_MODES=[["black",".42"],["dark",".62"],["light","1"]];
+let mapMode=0;
+function applyMapMode(){
+  const v=MAP_MODES[mapMode][1];
+  document.querySelectorAll(".basemap-dark").forEach(el=>{
+    el.style.filter=`brightness(${v}) contrast(${v==="1"?"1":"1.25"}) saturate(.5)`;});
+  const b=document.getElementById("maptoggle");
+  if(b) b.textContent="◐ "+MAP_MODES[mapMode][0];
+  try{sessionStorage.setItem("gw_mapmode",mapMode);}catch(e){}
+}
+function wireMapToggle(){
+  const b=document.getElementById("maptoggle"); if(!b) return;
+  try{const s=sessionStorage.getItem("gw_mapmode");
+    if(s!==null) mapMode=Math.min(MAP_MODES.length-1,Math.max(0,+s));}catch(e){}
+  b.onclick=()=>{mapMode=(mapMode+1)%MAP_MODES.length;applyMapMode();};
+  setTimeout(applyMapMode,300);
+}
 function wireRadar(){
   radarBtn().onclick=()=>{
     radarOn=!radarOn;
@@ -720,7 +748,9 @@ function renderFeeds(){
     tr.innerHTML=f.error
       ?`<td><span class="okdot errdot"></span>${esc(f.name)}</td>
         <td colspan="2" class="err" title="${esc(f.error)}">${esc(f.error.slice(0,42))}</td>`
-      :`<td><span class="okdot"></span>${esc(f.name)}</td>
+      :`<td><span class="okdot" style="${(AUDIT&&(AUDIT.feeds||[]).some(a=>a.region===f.name&&a.suspect))?"background:var(--amber)":""}"></span>${esc(f.name)}${
+          (AUDIT&&(AUDIT.feeds||[]).some(a=>a.region===f.name&&a.suspect))?
+          ' <span class="badge b-amber" title="see Accountability > data quality">?</span>':""}</td>
         <td class="n">${f.outages}</td><td class="n">${fmt(f.customers)}</td>`;
     tb.appendChild(tr);
   }
@@ -1065,8 +1095,44 @@ function actionPanel(region){
       where rate and performance decisions actually get argued. Regulator links are
       best-effort; if one has moved, search the commission by name.</div></div>`;
 }
+function renderAudit(){
+  const el=document.getElementById("auditcard"),wrap=document.getElementById("auditwrap");
+  if(!el||!wrap) return;
+  if(!AUDIT){
+    wrap.style.display="";
+    el.innerHTML=`<div class="meta">Feed self-audit runs on each poll — results appear after
+      the next successful run.</div>`;
+    return;
+  }
+  wrap.style.display="";
+  const bad=(AUDIT.feeds||[]).filter(f=>f.suspect);
+  const ok=(AUDIT.feeds||[]).length-bad.length;
+  el.innerHTML=`<div class="meta" style="margin-bottom:8px">An instrument that grades other
+    people's data has to police its own. Every feed is checked for a frozen endpoint
+    (a utility serving the same cached snapshot repeatedly), points drifting outside the
+    service area, missing customer counts, and silence. <b>${ok} of ${(AUDIT.feeds||[]).length}
+    feeds pass.</b></div>
+    ${bad.length?`<table><thead><tr><th>feed</th><th>problem</th>
+      <th class="n">rows/day</th></tr></thead><tbody>
+      ${bad.map(f=>`<tr><td><span class="okdot errdot"></span>${esc(f.region)}</td>
+        <td class="err">${esc(f.flags[0])}</td>
+        <td class="n">${fmt(f.rows_per_day)}</td></tr>`).join("")}</tbody></table>
+      <div class="caveat">Numbers from these feeds are marked <span class="badge b-red">suspect</span>
+        elsewhere on this page rather than quietly averaged in. A frozen feed inflates outage
+        durations; a silent one under-counts a whole territory.</div>`
+      :`<div class="meta" style="color:var(--green)">All feeds passing.</div>`}`;
+}
 function renderAccount(){
-  if(!ACCT) return;
+  renderAudit();
+  if(!ACCT){
+    const msg=`<div class="meta">Not generated yet — the accountability tables are built by
+      the poller from accumulated history. They appear after the next successful run
+      (look for <code>accountability: N utilities graded</code> in the workflow log).</div>`;
+    for(const id of ["disccard","etrcard","cmicard","chroniccard"]){
+      const el=document.getElementById(id); if(el) el.innerHTML=msg;
+    }
+    return;
+  }
   const U=UTILITY_NAME, GC={A:"var(--green)",B:"#8ac926",C:"var(--amber)",D:"#fb923c",F:"var(--red)"};
   const d=document.getElementById("disccard");
   if(d){
@@ -1076,7 +1142,8 @@ function renderAccount(){
       <table><thead><tr><th>utility</th><th>grade</th><th class="n">cause</th>
       <th class="n">ETR</th><th class="n">crew</th><th class="n">trackable id</th></tr></thead>
       <tbody>${ACCT.utilities.map(u=>`<tr>
-        <td>${esc(U[u.region]||u.region)}<div class="meta">${esc(u.region)}</div></td>
+        <td>${esc(U[u.region]||u.region)}<div class="meta">${esc(u.region)}
+          ${u.suspect?'<span class="badge b-red">suspect data</span>':""}</div></td>
         <td><span class="badge" style="background:${GC[u.grade]}22;color:${GC[u.grade]}">${u.grade}</span></td>
         <td class="n" style="color:${u.cause_pct?"inherit":"var(--red)"}">${u.cause_pct}%</td>
         <td class="n" style="color:${u.etr_pct?"inherit":"var(--red)"}">${u.etr_pct}%</td>
@@ -1113,7 +1180,8 @@ function renderAccount(){
       the numerator of the industry's own SAIDI metric, measured continuously instead of
       self-reported once a year.</div>
       ${ACCT.cmi.slice(0,12).map(x=>`<div class="longrow" style="border:0;padding:3px 0">
-        <span>${esc(x.region)}</span><b>${fmt(x.cmi)} <span class="meta">CMI · ${fmt(x.incidents)} incidents</span></b></div>
+        <span>${esc(x.region)}${x.suspect?' <span class="badge b-red">suspect</span>':""}</span>
+        <b>${fmt(x.cmi)} <span class="meta">CMI · ${fmt(x.incidents)} incidents</span></b></div>
         <div class="statebar" style="width:${Math.max(2,100*x.cmi/max)}%;margin-bottom:5px"></div>`).join("")}
       <div class="caveat">A high figure can mean many outages, very long ones, or a dense service
         territory — read it with the incident count.</div>`;
@@ -1557,6 +1625,7 @@ document.addEventListener("keydown",e=>{
   try{TRENDS=await fetch("data/trends.json").then(r=>r.json());}catch(e){TRENDS=null;}
   try{HOT=await fetch("data/hotspots.json").then(r=>r.json());}catch(e){HOT=null;}
   try{ACCT=await fetch("data/accountability.json").then(r=>r.json());}catch(e){ACCT=null;}
+  try{AUDIT=await fetch("data/feed_audit.json").then(r=>r.json());}catch(e){AUDIT=null;}
 
   drawDCs();drawInfra();buildSideRows();wireRadar();
   plot();kpis();mixbar();renderFeeds();renderStates();topEvents();regionChips();
@@ -1564,7 +1633,7 @@ document.addEventListener("keydown",e=>{
   renderStrain();renderNyiso();renderEia();renderFlows();renderWatch();renderBurden();
   renderPipeline();loadEvidence(30);
   ageTick();setInterval(ageTick,30000);
-  renderCauses();wirePlayback();renderAccount();
+  renderCauses();wirePlayback();renderAccount();wireMapToggle();
   document.getElementById("zipgo").onclick=zipLookup;
   document.getElementById("zipinput").addEventListener("keydown",
     e=>{if(e.key==="Enter") zipLookup();});

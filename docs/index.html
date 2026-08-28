@@ -767,6 +767,7 @@ function areaStats(lat,lon,km){
     if(c.worst_n>s.worst[1]) s.worst=[c.worst_day,c.worst_n];
   }
   s.cells=cells.length;
+  s.top=cells.slice().sort((a,b)=>b.n-a.n).slice(0,3);
   // percentile rank of the busiest local cell against every cell we track
   const all=((HOT&&HOT.cells)||[]).map(c=>c.n).sort((a,b)=>a-b);
   const best=Math.max(0,...cells.map(c=>c.n));
@@ -830,6 +831,18 @@ function renderArea(){
       .slice(0,5).map(o=>`<div class="longrow"><span><span class="okdot" style="background:${cRaw(o)}"></span>
       ${esc(o.region)} · ${esc((o.classification||"").toLowerCase())}</span>
       <b>${fmt(o.customers)}</b></div>`).join("")+`</div>`:""}
+    ${s.top&&s.top.length?`<div style="margin-top:10px">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);
+        margin-bottom:6px">Worst spots within ${KM} km — cite these when you report</div>
+      ${s.top.map((c,i)=>`<div class="longrow" style="cursor:pointer"
+        onclick="map.setView([${c.lat},${c.lon}],14)">
+        <span><b>#${i+1}</b> ${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}
+          <span class="meta">· ${esc(c.region)} · top cause ${esc(c.top_cause)}
+          ${c.worst_day?`· worst day ${esc(c.worst_day)} (${c.worst_n})`:""}</span></span>
+        <b>${c.n} outages · ${fmt(c.cust)} cust</b></div>`).join("")}
+      <div class="meta" style="margin-top:4px">Click a row to zoom. Each spot is a
+        ~5 km cell; "${s.top[0].n} outages in ${HOT.window_days} days at this location"
+        is a concrete, checkable thing to put in a complaint.</div></div>`:""}
     ${util?actionPanel(util[0]):""}
     <div class="caveat">Counts are unique outage incidents recorded by GRIDWATCH in the last
       ${HOT?HOT.window_days:30} days within ${KM} km — not an official utility figure.
@@ -878,11 +891,20 @@ let PB={on:false,dates:[],idx:0,timer:null,cache:{},layer:null};
 const PB_CLS=[["weather-likely","#4c9aff"],["fair-weather","#f5a623"],
               ["near active DC","#ff5c5c"],["operating-DC context","#f472b6"],
               ["planned work","#22d3ee"]];
-function pbInit(){
+async function pbInit(){
   PB.layer=PB.layer||L.layerGroup();
-  PB.dates=((INDEX&&INDEX.days)||[]).map(d=>d.date);
+  if(!PB.dates.length){
+    // the poller publishes a manifest of days it actually wrote files for
+    try{
+      PB.dates=(await fetch("data/daily/index.json").then(r=>r.json())).dates||[];
+    }catch(e){ PB.dates=[]; }
+    if(!PB.dates.length)
+      PB.dates=((INDEX&&INDEX.days)||[]).map(d=>d.date).slice(-30);
+  }
   const sl=document.getElementById("playslider");
   sl.max=Math.max(0,PB.dates.length-1); sl.value=sl.max; PB.idx=+sl.max;
+  const st=document.getElementById("playstats");
+  if(!PB.dates.length&&st) st.textContent="no playback data yet — run a poll";
 }
 async function pbLoad(i){
   const date=PB.dates[i]; if(!date) return;
@@ -931,8 +953,8 @@ async function pbLoad(i){
       <i style="display:inline-block;width:9px;height:9px;border-radius:50%;
       background:${c[1]};margin-right:4px"></i>${c[0]} ${fmt(cls[i])}</span>`:"").join("")}`;
 }
-function pbEnter(){
-  PB.on=true; pbInit();
+async function pbEnter(){
+  PB.on=true; await pbInit();
   document.getElementById("playbar").style.display="";
   document.getElementById("histbtn").classList.add("on");
   document.getElementById("legend").style.display="none";

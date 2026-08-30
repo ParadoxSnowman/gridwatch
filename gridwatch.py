@@ -2919,6 +2919,7 @@ def _emit_feed_audit(emit_dir, hist_dir, dates, regions):
         if not os.path.exists(p):
             continue
         cur = {}
+        polls = {}
         with open(p) as fh:
             for line in fh:
                 if not line.strip():
@@ -2932,6 +2933,8 @@ def _emit_feed_audit(emit_dir, hist_dir, dates, regions):
                                          "zero": 0, "polls": set()})
                 s["rows"] += 1
                 s["polls"].add(r.get("polled_at", ""))
+                polls.setdefault((reg, r.get("polled_at", "")), set()).add(
+                    stable_key(r))
                 la, lo = r.get("lat"), r.get("lon")
                 if la is not None and lo is not None:
                     s["pos"].add((round(la, 4), round(lo, 4)))
@@ -2941,6 +2944,10 @@ def _emit_feed_audit(emit_dir, hist_dir, dates, regions):
                         s["out"] += 1
                 if not r.get("customers"):
                     s["zero"] += 1
+        for (reg, _ts), keys in polls.items():
+            cur.setdefault(reg, {"pos": set(), "rows": 0, "out": 0,
+                                 "zero": 0, "polls": set()})
+            cur[reg].setdefault("per_poll", []).append(len(keys))
         per_day[date] = cur
     ds = sorted(per_day)
     names = sorted({r for d in per_day.values() for r in d})
@@ -2973,7 +2980,11 @@ def _emit_feed_audit(emit_dir, hist_dir, dates, regions):
         avg_pos = sum(len(p) for p in pos) / len(pos)
         if avg_pos < 5:
             flags.append("very few distinct locations — feed may be truncated")
-        out.append({"region": reg, "rows_per_day": round(sum(rows) / len(rows)),
+        counts = sorted(n for d in ds if reg in per_day[d]
+                        for n in per_day[d][reg].get("per_poll", []))
+        typical = counts[len(counts) // 2] if counts else 0
+        out.append({"region": reg, "typical_per_poll": typical,
+                    "rows_per_day": round(sum(rows) / len(rows)),
                     "positions_per_day": round(avg_pos),
                     "polls_per_day": round(polls),
                     "repeat_pct": frozen, "suspect": bool(flags),

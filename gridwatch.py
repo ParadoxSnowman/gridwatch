@@ -407,7 +407,7 @@ class Kubra:
                 any_ever = True
                 n_tiles += 1
                 recs = [r for r in
-                        (self._parse_item(i)
+                        (self._parse_item(i, self.region.get("name"))
                          for i in payload.get("file_data", []))
                         if r]
                 if recs:
@@ -478,7 +478,7 @@ class Kubra:
         return incidents, any_ever
 
     @staticmethod
-    def _parse_item(item):
+    def _parse_item(item, region_name=None):
         desc = item.get("desc", {}) or {}
         geom = item.get("geom", {}) or {}
         pts = geom.get("p") or []
@@ -521,8 +521,7 @@ class Kubra:
         # Capture the raw payload for a few records per feed so the true
         # field can be identified instead of guessed at.
         try:
-            rn = self.region.get("name", "?")
-            bucket = FIELD_SAMPLES.setdefault(rn, [])
+            bucket = FIELD_SAMPLES.setdefault(region_name or "?", [])
             if len(bucket) < 3:
                 keep = {k: v for k, v in desc.items()
                         if not isinstance(v, (list,))
@@ -1458,7 +1457,7 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 AUTO_MAX_AGE_DAYS = 7
 
 
-def _overpass_query(bboxes):
+def _overpass_dc_query(bboxes):
     parts = []
     for b in bboxes:
         box = f"{b['south']},{b['west']},{b['north']},{b['east']}"
@@ -1476,7 +1475,7 @@ def fetch_auto_datacenters(cfg, out_path):
     if not bboxes:
         bboxes = [cfg["bbox"]]
     try:
-        r = requests.post(OVERPASS_URL, data={"data": _overpass_query(bboxes)},
+        r = requests.post(OVERPASS_URL, data={"data": _overpass_dc_query(bboxes)},
                           timeout=90, headers={"User-Agent": cfg["nws_user_agent"]})
         r.raise_for_status()
         elements = r.json().get("elements", [])
@@ -1950,7 +1949,7 @@ def fetch_nws_alerts(cfg, regions, out_path):
     south = min(b["south"] for b in lats); north = max(b["north"] for b in lats)
     west = min(b["west"] for b in lats);  east = max(b["east"] for b in lats)
     url = ("https://api.weather.gov/alerts/active?status=actual"
-           f"&message_type=alert&region_type=land")
+           "&message_type=alert&region_type=land")
     try:
         r = rq.get(url, timeout=45,
                    headers={"User-Agent": cfg.get("nws_user_agent",
@@ -3019,7 +3018,7 @@ def _emit_accountability(emit_dir, disc, spans, latest_ts, suspect=None):
     Both are computed from what the utilities themselves publish, so the
     comparison is theirs, not ours.
     """
-    from collections import Counter, defaultdict
+    from collections import defaultdict
     etr_stat = defaultdict(lambda: {"n": 0, "ontime": 0, "err": [],
                                     "expired": 0})
     cmi = defaultdict(lambda: {"cmi": 0, "inc": 0, "cust": 0})

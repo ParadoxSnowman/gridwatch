@@ -239,9 +239,10 @@ footer{margin:26px 0 40px;text-align:center;color:var(--dim);font-size:11.5px;li
         <div id="sitelist"></div></details></div>
     </div>
     <div>
-      <div class="card" id="strainwrap" style="display:none"><h2>Grid strain — demand vs forecast</h2>
+      <div class="card" id="strainwrap" style="display:none"><h2>Unforecast load — demand vs forecast</h2>
         <div id="straincard"></div></div>
       <div class="card"><h2>Feed status</h2>
+        <div id="feednote" class="meta" style="margin-bottom:8px"></div>
         <table id="feedtable"><thead><tr><th>feed</th><th class="n">out</th><th class="n">cust</th></tr></thead>
         <tbody></tbody></table></div>
       <div class="card"><h2>By state</h2>
@@ -751,7 +752,10 @@ function renderStates(){
 }
 function renderFeeds(){
   const tb=document.querySelector("#feedtable tbody"); if(!tb||!LATEST) return;
+  const base={};
+  for(const a of ((AUDIT&&AUDIT.feeds)||[])) base[a.region]=a.typical_per_poll||0;
   const fs=[...(LATEST.feeds||[])].sort((a,b)=>(b.error?1:0)-(a.error?1:0)||b.customers-a.customers);
+  let quiet=0;
   tb.innerHTML="";
   for(const f of fs){
     const tr=document.createElement("tr");
@@ -761,8 +765,26 @@ function renderFeeds(){
       :`<td><span class="okdot" style="${(AUDIT&&(AUDIT.feeds||[]).some(a=>a.region===f.name&&a.suspect))?"background:var(--amber)":""}"></span>${esc(f.name)}${
           (AUDIT&&(AUDIT.feeds||[]).some(a=>a.region===f.name&&a.suspect))?
           ' <span class="badge b-amber" title="see Accountability > data quality">?</span>':""}</td>
-        <td class="n">${f.outages}</td><td class="n">${fmt(f.customers)}</td>`;
+        <td class="n">${f.outages}${(()=>{
+            const t=base[f.name]||0;
+            if(!t||t<3) return "";
+            if(f.outages===0){quiet++;return ' <span class="badge b-red" title="normally ~'
+              +t+' per poll — reporting nothing without erroring">0?</span>';}
+            if(f.outages<t*0.35){quiet++;return ' <span class="badge b-amber" title="normally ~'
+              +t+' per poll">low</span>';}
+            return "";})()}</td><td class="n">${fmt(f.customers)}</td>`;
     tb.appendChild(tr);
+  }
+  const note=document.getElementById("feednote");
+  if(note){
+    const totTyp=Object.values(base).reduce((a,b)=>a+b,0);
+    const now=(LATEST.outages||[]).length;
+    note.innerHTML = totTyp
+      ? `${fmt(now)} outages now vs <b>~${fmt(totTyp)}</b> typical for a poll.
+         ${quiet?`<span style="color:var(--amber)">${quiet} feed${quiet>1?"s":""} reporting
+         well below baseline</span> — hover the badge for that feed's normal volume.`:
+         `Counts drop sharply overnight; compare against the same hour before reading much into it.`}`
+      : "";
   }
   const ok=(LATEST.feeds||[]).filter(f=>!f.error).length;
   document.getElementById("feedpill").textContent=
@@ -1260,8 +1282,13 @@ function renderStrain(){
       <td class="n">${b.hours_ge98}h</td><td class="n">${b.latest_pct}%</td></tr>`;}).join("");
   el.innerHTML=`<table><thead><tr><th>grid</th><th class="n">48h peak</th>
     <th class="n">≥98%</th><th class="n">latest</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="caveat">Actual demand vs day-ahead forecast (EIA-930). Sustained ≥98% is when
-    brownouts/conservation appeals happen — voltage-sag data itself is published nowhere.</div>`;
+    <div class="caveat">Actual demand vs the grid operator's own day-ahead forecast (EIA-930) —
+    <b>load nobody planned for</b>, which is what stresses operations. It is not a measure of
+    spare capacity, and true voltage-sag data is published nowhere.
+    ${STRAIN.bas.some(b=>b.align_lag_h)?`<br>Note: the published actual and forecast series were
+    stamped an hour apart for ${esc(STRAIN.bas.filter(b=>b.align_lag_h).map(b=>b.ba).join(", "))};
+    GRIDWATCH realigns them before comparing — otherwise the morning demand ramp shows up as
+    false strain.`:""}</div>`;
 }
 
 /* ================= history ================= */

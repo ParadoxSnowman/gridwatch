@@ -515,6 +515,21 @@ class Kubra:
         cust = _val(desc, "cust_a", "val")
         if cust is None:
             cust = desc.get("n_out") or 0
+        # DIAGNOSTIC: customer counts came back stacked on per-utility
+        # constants (86% of BGE records read exactly 4, 84% of FirstEnergy
+        # read exactly 19), which is not what real outage sizes look like.
+        # Capture the raw payload for a few records per feed so the true
+        # field can be identified instead of guessed at.
+        try:
+            rn = self.region.get("name", "?")
+            bucket = FIELD_SAMPLES.setdefault(rn, [])
+            if len(bucket) < 3:
+                keep = {k: v for k, v in desc.items()
+                        if not isinstance(v, (list,))
+                        and len(str(v)) < 300}
+                bucket.append({"parsed_customers": cust, "raw_desc": keep})
+        except Exception:
+            pass
         etr = desc.get("etr") or desc.get("start_etr") or ""
         crew = desc.get("crew_status") or desc.get("crew_icon") or ""
         if isinstance(crew, dict):
@@ -576,6 +591,8 @@ class IFactor(Kubra):
             meta_candidates += [f"{base}/{dp}/metadata.json",
                                 f"{base}/{dp}/metadata.xml"]
         directory, data_path = None, None
+        if self.region.get("metadata_url"):
+            meta_candidates = [self.region["metadata_url"]] + list(meta_candidates)
         for mu in meta_candidates:
             try:
                 # CloudFront happily serves a cached metadata.json for months;
@@ -1626,6 +1643,14 @@ def _old_discover(cfg):
               ".../stormcenters/{INSTANCE_ID}/views/{VIEW_ID}/currentState")
 
 
+def _region_enabled(r):
+    """A region can be parked with "enabled": false — used when a utility's
+    endpoint dies or turns out to serve someone else's territory. Keeping the
+    config (with a note) beats deleting it: re-enabling is one edit once a
+    fresh capture arrives."""
+    return r.get("enabled", True) is not False
+
+
 def _region_ready(r):
     p = r.get("provider", "kubra")
     if p == "ifactor":
@@ -2341,9 +2366,48 @@ def fetch_eia_strain(cfg, out_path):
         pers = sorted(byper)
         if len(pers) > SETTLE_LAG:
             pers = pers[:-SETTLE_LAG]
+        # EIA publishes actual demand (D) and the day-ahead forecast (DF) on
+        # the same period stamps, but the two series have been observed
+        # sitting an hour apart — which inflates the ratio hardest during the
+        # morning ramp and produced "peaks" at 6am with 46 of 48 hours above
+        # 98%. Rather than assume an offset, try a few alignments and keep the
+        # one whose median ratio lands closest to 100%: correctly aligned data
+        # picks lag 0 on its own.
+        best_lag, best_dev, best_med = 0, None, None
+        for lag in (-2, -1, 0, 1, 2):
+            rs = []
+            for i, per in enumerate(pers):
+                j = i + lag
+                if j < 0 or j >= len(pers):
+                    continue
+                d0 = byper[per].get("D")
+                f0 = byper[pers[j]].get("DF")
+                if d0 and f0:
+                    rs.append(100.0 * d0 / f0)
+            if len(rs) < 12:
+                continue
+            rs.sort()
+            med = rs[len(rs) // 2]
+            # Score on TIGHTNESS around the series' own centre, not on
+            # closeness to 100%. A misaligned pairing scatters the ratio across
+            # the daily ramp; a genuinely under-forecast grid sits tightly at,
+            # say, 105%. Measuring scatter about 100 would wrongly prefer the
+            # misaligned version just because its swings straddle 100.
+            devs = sorted(abs(x - med) for x in rs)
+            dev = devs[len(devs) // 2]
+            if best_dev is None or dev < best_dev:
+                best_lag, best_dev, best_med = lag, dev, med
+        if best_lag:
+            print(f"[i] EIA strain [{ba}]: D/DF aligned at lag {best_lag:+d}h "
+                  f"(median ratio {best_med:.1f}%) — the raw stamps were "
+                  f"offset")
         ratios, dropped = [], 0
-        for per in pers:
-            d, f = byper[per].get("D"), byper[per].get("DF")
+        for i, per in enumerate(pers):
+            j = i + best_lag
+            if j < 0 or j >= len(pers):
+                continue
+            d = byper[per].get("D")
+            f = byper[pers[j]].get("DF")
             if not (d and f):
                 continue
             pct = 100.0 * d / f
@@ -2357,7 +2421,8 @@ def fetch_eia_strain(cfg, out_path):
             continue
         recent = ratios[-48:]
         peak = max(recent, key=lambda x: x[1])
-        bas.append({"ba": ba,
+        bas.append({"ba": ba, "align_lag_h": best_lag,
+                    "median_pct": round(best_med, 1) if best_med else None,
                     "latest_pct": round(recent[-1][1], 1),
                     "latest_period": recent[-1][0],
                     "max48_pct": round(peak[1], 1),
@@ -2558,6 +2623,7 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
         auto_path = os.path.join(emit_dir, "datacenters_auto.json")
         if _auto_layer_stale(auto_path):
             fetch_auto_datacenters(cfg, auto_path)
+        globals()['REGIONS_FOR_AUDIT'] = regions
         pl_path = os.path.join(emit_dir, "powerlines.json")
         if _auto_layer_stale(pl_path):
             fetch_powerlines(cfg, sites, pl_path)
@@ -2721,6 +2787,15 @@ def _emit_json(emit_dir, polled_at, records, cfg, feeds=None):
     except Exception as e:
         print(f"[!] hotspots failed (non-fatal): {e}")
 
+    if FIELD_SAMPLES:
+        with open(os.path.join(emit_dir, "_field_samples.json"), "w") as f:
+            json.dump({"generated_at": datetime.now(timezone.utc).isoformat(
+                           timespec="seconds"),
+                       "why": "diagnostic: identifying the real customers-"
+                              "affected field in each feed's payload",
+                       "feeds": FIELD_SAMPLES}, f, indent=1)
+        print(f"[i] field samples captured for {len(FIELD_SAMPLES)} feeds "
+              f"-> _field_samples.json")
     gj = {"type": "FeatureCollection",
           "features": [{"type": "Feature",
                         "geometry": {"type": "Point",
@@ -2831,7 +2906,100 @@ def _parse_etr(s):
     return None
 
 
-def _emit_accountability(emit_dir, disc, spans, latest_ts):
+def _emit_feed_audit(emit_dir, hist_dir, dates, regions):
+    """Audit our own feeds. An instrument that grades other people's data has
+    to police its own: a utility endpoint can silently freeze (AEP Ohio served
+    a year-old snapshot for months), drift outside its territory, or quietly
+    return nothing at all. Feeds that fail are marked suspect so their numbers
+    can be excluded rather than silently polluting the statistics."""
+    bbox = {r["name"]: r.get("bbox") for r in regions}
+    per_day = {}
+    for date in dates[-4:]:
+        p = os.path.join(hist_dir, f"{date}.ndjson")
+        if not os.path.exists(p):
+            continue
+        cur = {}
+        with open(p) as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                reg = r.get("region", "?")
+                s = cur.setdefault(reg, {"pos": set(), "rows": 0, "out": 0,
+                                         "zero": 0, "polls": set()})
+                s["rows"] += 1
+                s["polls"].add(r.get("polled_at", ""))
+                la, lo = r.get("lat"), r.get("lon")
+                if la is not None and lo is not None:
+                    s["pos"].add((round(la, 4), round(lo, 4)))
+                    b = bbox.get(reg)
+                    if b and not (b["south"] - .05 <= la <= b["north"] + .05
+                                  and b["west"] - .05 <= lo <= b["east"] + .05):
+                        s["out"] += 1
+                if not r.get("customers"):
+                    s["zero"] += 1
+        per_day[date] = cur
+    ds = sorted(per_day)
+    names = sorted({r for d in per_day.values() for r in d})
+    out = []
+    for reg in names:
+        rows = [per_day[d][reg]["rows"] for d in ds if reg in per_day[d]]
+        pos = [per_day[d][reg]["pos"] for d in ds if reg in per_day[d]]
+        if not rows:
+            continue
+        овs = []
+        for i in range(1, len(pos)):
+            if pos[i] and pos[i - 1]:
+                овs.append(len(pos[i] & pos[i - 1])
+                           / max(1, len(pos[i] | pos[i - 1])))
+        frozen = round(100 * sum(овs) / len(овs)) if овs else 0
+        tot = sum(rows)
+        outb = sum(per_day[d][reg]["out"] for d in ds if reg in per_day[d])
+        zero = sum(per_day[d][reg]["zero"] for d in ds if reg in per_day[d])
+        polls = sum(len(per_day[d][reg]["polls"]) for d in ds
+                    if reg in per_day[d]) / max(1, len(rows))
+        flags = []
+        if frozen > 90:
+            flags.append("frozen: identical positions day over day — the "
+                         "endpoint is replaying a cached snapshot")
+        if tot and outb / tot > .02:
+            flags.append(f"{round(100*outb/tot)}% of points fall outside the "
+                         f"configured service area")
+        if tot and zero / tot > .5:
+            flags.append("most records carry no customer count")
+        avg_pos = sum(len(p) for p in pos) / len(pos)
+        if avg_pos < 5:
+            flags.append("very few distinct locations — feed may be truncated")
+        out.append({"region": reg, "rows_per_day": round(sum(rows) / len(rows)),
+                    "positions_per_day": round(avg_pos),
+                    "polls_per_day": round(polls),
+                    "repeat_pct": frozen, "suspect": bool(flags),
+                    "flags": flags})
+    silent = [r["name"] for r in regions
+              if r["name"] not in names]
+    for reg in silent:
+        out.append({"region": reg, "rows_per_day": 0, "positions_per_day": 0,
+                    "polls_per_day": 0, "repeat_pct": 0, "suspect": True,
+                    "flags": ["no data in recent history — feed configured but "
+                              "returning nothing"]})
+    out.sort(key=lambda x: (not x["suspect"], x["region"]))
+    with open(os.path.join(emit_dir, "feed_audit.json"), "w") as f:
+        json.dump({"generated_at": datetime.now(timezone.utc).isoformat(
+                       timespec="seconds"),
+                   "days_examined": len(ds), "feeds": out},
+                  f, separators=(",", ":"))
+    bad = [f for f in out if f["suspect"]]
+    print(f"[i] feed audit: {len(out)} feeds checked, {len(bad)} suspect"
+          + (": " + ", ".join(f["region"] for f in bad) if bad else ""))
+    for f in bad:
+        print(f"[!]   {f['region']}: {f['flags'][0]}")
+    return {f["region"] for f in bad}
+
+
+def _emit_accountability(emit_dir, disc, spans, latest_ts, suspect=None):
     """The disclosure + promise-keeping scorecard.
 
     Two things no regulator publishes: (1) how much a monopoly actually tells
@@ -2909,8 +3077,12 @@ def _emit_accountability(emit_dir, disc, spans, latest_ts):
             "etr_median_err_min": (round(med) if med is not None else None),
             "etr_expired": e["expired"] if e else 0,
         })
+    suspect = suspect or set()
+    for u in utils:
+        u["suspect"] = u["region"] in suspect
     utils.sort(key=lambda x: -x["score"])
-    cmi_rows = [{"region": r, "cmi": round(v["cmi"]), "incidents": v["inc"],
+    cmi_rows = [{"region": r, "suspect": r in suspect,
+                 "cmi": round(v["cmi"]), "incidents": v["inc"],
                  "customers": v["cust"],
                  "avg_min": round(v["cmi"] / v["cust"]) if v["cust"] else None}
                 for r, v in cmi.items()]
@@ -2924,13 +3096,19 @@ def _emit_accountability(emit_dir, disc, spans, latest_ts):
                        timespec="seconds"),
                    "utilities": utils, "cmi": cmi_rows,
                    "chronic": ch_rows[:200]}, f, separators=(",", ":"))
-    best = utils[0] if utils else None
-    worst = utils[-1] if utils else None
-    print(f"[i] accountability: {len(utils)} utilities graded "
-          f"(best {best['region']} {best['grade']}, "
-          f"worst {worst['region']} {worst['grade']}), "
-          f"{len(ch_rows)} chronic locations")
+    if utils:
+        best, worst = utils[0], utils[-1]
+        print(f"[i] accountability: {len(utils)} utilities graded "
+              f"(best {best['region']} {best['grade']}, "
+              f"worst {worst['region']} {worst['grade']}), "
+              f"{len(ch_rows)} chronic locations")
+    else:
+        print("[i] accountability: no history yet — nothing to grade")
     return True
+
+
+REGIONS_FOR_AUDIT = []
+FIELD_SAMPLES = {}
 
 
 def _emit_playback(emit_dir, hist_dir, dates):
@@ -3044,7 +3222,12 @@ def _emit_playback(emit_dir, hist_dir, dates):
                        "o": rows}, f, separators=(",", ":"))
         total += len(rows)
     try:
-        _emit_accountability(emit_dir, disc, all_spans, latest_ts)
+        suspect = _emit_feed_audit(emit_dir, hist_dir, dates, REGIONS_FOR_AUDIT)
+    except Exception as e:
+        print(f"[!] feed audit failed (non-fatal): {e}")
+        suspect = set()
+    try:
+        _emit_accountability(emit_dir, disc, all_spans, latest_ts, suspect)
     except Exception as e:
         print(f"[!] accountability emit failed (non-fatal): {e}")
     avail = sorted(byday)
@@ -3358,6 +3541,7 @@ def cmd_verify(cfg, region_filter=None):
         regions = [r for r in regions if r["name"] in region_filter]
     report = {"checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "regions": {}}
+    regions = [r for r in regions if _region_enabled(r)]
     for region in regions:
         name = region["name"]
         entry = {"provider": region.get("provider", "kubra"), "ok": False}

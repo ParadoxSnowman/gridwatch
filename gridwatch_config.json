@@ -431,7 +431,8 @@
         "east": -82.3,
         "north": 39.15
       },
-      "_note": "2026-08-28: KUBRA currentState captured from the LG&E/KU storm center. LG&E (Louisville) and Kentucky Utilities (central/eastern KY) share one map, so this single region replaces the parked KY-LGE and KY-KU opco phantoms. ASSUMPTION: this capture came from lge-ku.com \u2014 if the first poll returns zero outages, it may actually be the Rhode Island Energy capture; swap the bbox to RI (west -71.95 south 41.1 east -71.05 north 42.05) and rename."
+      "_note": "CONFIRMED 2026-08-30: capture origin was stormcenter.lge-ku.com, and the live feed returns Kentucky coordinates (Louisville through the southeast). Layer pinned to cluster-3 from the map's own tile requests, so the auto-detect sweep is skipped. Replaces the parked KY-LGE/KY-KU opco phantoms.",
+      "kubra_layer": "cluster-3"
     }
   ],
   "tile_workers": 8,

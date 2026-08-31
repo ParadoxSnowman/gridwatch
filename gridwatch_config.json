@@ -53,7 +53,8 @@
         "east": -77.0,
         "north": 40.7
       },
-      "_note": "FE reshuffles KUBRA layers on redeploy \u2014 auto-detect, do not pin"
+      "_note": "2026-08-30: GUIDs re-verified against a fresh capture and unchanged, so the blank northern-WV area was NOT stale config \u2014 the layer sweep was stopping on an empty-but-answering cluster layer. Fixed in code; merge_layers also set because FirstEnergy serves Potomac Edison and Mon Power from one view and may split them across layers.",
+      "merge_layers": true
     },
     {
       "name": "NY-NGRID",
@@ -433,6 +434,84 @@
       },
       "_note": "CONFIRMED 2026-08-30: capture origin was stormcenter.lge-ku.com, and the live feed returns Kentucky coordinates (Louisville through the southeast). Layer pinned to cluster-3 from the map's own tile requests, so the auto-detect sweep is skipped. Replaces the parked KY-LGE/KY-KU opco phantoms.",
       "kubra_layer": "cluster-3"
+    },
+    {
+      "name": "NY-NYSEG",
+      "provider": "avangrid",
+      "opco": "nyseg",
+      "aggregate": true,
+      "entry": "https://portal.nyseg.com/outages/map",
+      "subscription_key": "aafa73f8e0e347039fcf83a7186ab00c",
+      "bbox": {
+        "west": -79.8,
+        "south": 41.9,
+        "east": -73.2,
+        "north": 45.0
+      },
+      "_note": "Avangrid publishes only COUNTY AGGREGATES publicly \u2014 records are county centroids, flagged aggregate so they are excluded from chronic-location and customer-minute analytics. Fills the upstate NY gap. Bbox widened north to 45.0 to include Plattsburgh and the North Country, which the original box clipped."
+    },
+    {
+      "name": "NY-RGE",
+      "provider": "avangrid",
+      "opco": "rge",
+      "aggregate": true,
+      "entry": "http://portal.rge.com/outages/map",
+      "subscription_key": "aafa73f8e0e347039fcf83a7186ab00c",
+      "bbox": {
+        "west": -78.5,
+        "south": 42.4,
+        "east": -76.3,
+        "north": 43.5
+      },
+      "_note": "Rochester Gas & Electric. County aggregates only \u2014 see NY-NYSEG note."
+    },
+    {
+      "name": "ME-CMP",
+      "provider": "avangrid",
+      "opco": "cmp",
+      "aggregate": true,
+      "entry": "https://portal.cmpco.com/outages/map",
+      "subscription_key": "aafa73f8e0e347039fcf83a7186ab00c",
+      "bbox": {
+        "west": -71.1,
+        "south": 43.0,
+        "east": -66.9,
+        "north": 47.5
+      },
+      "_note": "Central Maine Power. County aggregates only \u2014 see NY-NYSEG note."
+    },
+    {
+      "name": "MI-DTE",
+      "entry": "https://outage.dteenergy.com/map",
+      "instance_id": "4fbb3ad3-e01d-4d71-9575-d453769c1171",
+      "view_id": "8ed2824a-bd92-474e-a7c4-848b812b7f9b",
+      "kubra_layer": "cluster-1",
+      "max_tiles": 30000,
+      "bbox": {
+        "west": -84.5,
+        "south": 41.7,
+        "east": -82.0,
+        "north": 44.3
+      },
+      "_note": "DTE Energy (~2.3M customers, Detroit metro + eastern Michigan). KUBRA; layer taken from the map's own tile requests. Michigan was the largest blank area on the map."
+    },
+    {
+      "name": "MI-CONSUMERS",
+      "provider": "arcgis",
+      "entry": "https://www.consumersenergy.com/outagemap",
+      "base": "https://www.consumersenergy.com/arcgispublic/rest/services/CEOutageMap/MapServer",
+      "layers": [
+        0,
+        1,
+        2
+      ],
+      "bbox": {
+        "west": -87.5,
+        "south": 41.7,
+        "east": -82.4,
+        "north": 46.6
+      },
+      "_note": "Consumers Energy (~1.9M customers, western/central Michigan). ArcGIS MapServer \u2014 the capture only exposed image-export calls, so this uses the standard ArcGIS query endpoint on the same service. If the service refuses queries it will say so in the log and this region needs a real /query capture instead."
     }
   ],
   "tile_workers": 8,

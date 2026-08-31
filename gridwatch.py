@@ -306,16 +306,38 @@ class Kubra:
         if "layer" not in ctx:            # non-layered providers (ifactor)
             incidents, answered = self._descend(ctx)
             return self._finish(incidents)
+        # Some deployments split opcos across cluster layers (FirstEnergy's
+        # MD/WV view serves Potomac Edison and Mon Power separately), so a
+        # region can opt into merging every layer instead of picking one.
+        if self.region.get("merge_layers"):
+            merged, hits = [], []
+            for layer in [f"cluster-{i}" for i in range(1, 8)]:
+                ctx["layer"] = layer
+                incidents, answered = self._descend(ctx)
+                if answered and incidents:
+                    merged.extend(incidents)
+                    hits.append(f"{layer}:{len(incidents)}")
+            if hits:
+                print(f"[i] [{self.region['name']}] merged layers {', '.join(hits)}")
+            return self._finish(merged)
+        best = None
         for i, layer in enumerate(self._layer_candidates()):
             ctx["layer"] = layer
             incidents, answered = self._descend(ctx)
-            if answered:
+            if not answered:
+                continue
+            if incidents:
                 if i > 0:
                     print(f"[i] [{self.region['name']}] layer auto-detected: "
                           f"{layer} (remember it: set 'kubra_layer': "
                           f"'{layer}' on this region in gridwatch_config.json)")
                     self.region["kubra_layer"] = layer
                 return self._finish(incidents)
+            # A layer that answers but is EMPTY used to end the search, which
+            # silently pinned regions to a blank layer — the whole of northern
+            # West Virginia went dark this way. Remember it and keep looking.
+            if best is None:
+                best = incidents
         print(f"[i] [{self.region['name']}] no tiles on any layer — region "
               f"is quiet (0 outages) across all cluster layers.")
         return self._finish({})
@@ -1171,6 +1193,87 @@ class AvangridAPI(Kubra):
         return out
 
 
+class ArcGISFeed(Kubra):
+    """Esri ArcGIS REST outage maps (Consumers Energy, and the pattern MLGW
+    uses). The map draws from a MapServer/FeatureServer layer that also
+    answers standard queries:
+        {base}/{layer}/query?where=1=1&outFields=*&f=json&outSR=4326
+    Field names vary by utility, so customers/cause/ETR are matched by
+    fuzzy key rather than assumed."""
+
+    CUST_KEYS = ("customersaffected", "custaffected", "customers", "cust_a",
+                 "numcustomers", "custout", "customersout", "affected")
+    CAUSE_KEYS = ("cause", "outagecause", "causedesc", "cause_desc")
+    ETR_KEYS = ("etr", "estimatedrestoration", "esttimerestore",
+                "estimatedtimeofrestoration", "restoretime")
+    ID_KEYS2 = ("outageid", "incidentid", "objectid", "outage_id", "id")
+
+    def fetch_outages(self):
+        base = self.region.get("base", "").rstrip("/")
+        layers = self.region.get("layers") or [0]
+        if not base:
+            raise RuntimeError("arcgis region needs a 'base' MapServer URL")
+        self.s.headers.update({"User-Agent": IFactor.BROWSER_UA,
+                               "Accept": "application/json"})
+        bbox = self.region.get("bbox") or {}
+        out, seen = [], set()
+        for layer in layers:
+            url = f"{base}/{layer}/query"
+            params = {"where": "1=1", "outFields": "*", "returnGeometry": "true",
+                      "outSR": "4326", "f": "json", "resultRecordCount": 5000}
+            try:
+                r = self.s.get(url, params=params, timeout=45)
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                print(f"[!] [{self.region['name']}] arcgis layer {layer}: {e}")
+                continue
+            if data.get("error"):
+                print(f"[!] [{self.region['name']}] arcgis layer {layer} "
+                      f"refused: {str(data['error'])[:120]}")
+                continue
+            feats = data.get("features") or []
+            for ft in feats:
+                geom = ft.get("geometry") or {}
+                attrs = {str(k).lower(): v for k, v in
+                         (ft.get("attributes") or {}).items()}
+                lat, lon = geom.get("y"), geom.get("x")
+                if lat is None and geom.get("points"):
+                    lon, lat = geom["points"][0][:2]
+                if lat is None or lon is None:
+                    continue
+                if bbox and not (bbox["south"] <= lat <= bbox["north"]
+                                 and bbox["west"] <= lon <= bbox["east"]):
+                    continue
+
+                def pick(keys, default=""):
+                    for k in keys:
+                        for ak, av in attrs.items():
+                            if k == ak or k in ak:
+                                if av not in (None, ""):
+                                    return av
+                    return default
+                try:
+                    cust = int(float(pick(self.CUST_KEYS, 0) or 0))
+                except (TypeError, ValueError):
+                    cust = 0
+                oid = str(pick(self.ID_KEYS2, "") or f"{lat:.5f},{lon:.5f}")
+                if oid in seen:
+                    continue
+                seen.add(oid)
+                out.append({"outage_id": oid,
+                            "lat": round(float(lat), 5),
+                            "lon": round(float(lon), 5),
+                            "customers": cust,
+                            "cause": str(pick(self.CAUSE_KEYS) or ""),
+                            "crew_status": "",
+                            "etr": str(pick(self.ETR_KEYS) or ""),
+                            "region": self.region["name"]})
+        print(f"[i] [{self.region['name']}] arcgis: {len(out)} outages "
+              f"from {len(layers)} layer(s)")
+        return out
+
+
 def make_provider(cfg, region):
     p = region.get("provider", "kubra")
     if p == "ifactor":
@@ -1185,6 +1288,8 @@ def make_provider(cfg, region):
         return PPLOmap(cfg, region=region)
     if p == "avangrid":
         return AvangridAPI(cfg, region=region)
+    if p == "arcgis":
+        return ArcGISFeed(cfg, region=region)
     return Kubra(cfg, region=region)
 
 
@@ -1658,6 +1763,8 @@ def _region_ready(r):
         return True
     if p in ("aesxml", "xmlfeed"):
         return bool(r.get("url"))
+    if p == "arcgis":
+        return bool(r.get("base"))
     if p == "pplomap":
         return True
     if p == "avangrid":
@@ -2623,6 +2730,8 @@ def cmd_poll(cfg, emit_dir=None, no_db=False):
         if _auto_layer_stale(auto_path):
             fetch_auto_datacenters(cfg, auto_path)
         globals()['REGIONS_FOR_AUDIT'] = regions
+        globals()['AGGREGATE_REGIONS'] = {r["name"] for r in regions
+                                          if r.get("aggregate")}
         pl_path = os.path.join(emit_dir, "powerlines.json")
         if _auto_layer_stale(pl_path):
             fetch_powerlines(cfg, sites, pl_path)
@@ -3034,7 +3143,7 @@ def _emit_accountability(emit_dir, disc, spans, latest_ts, suspect=None):
                         - datetime.fromisoformat(s["f"])).total_seconds() / 60
             except ValueError:
                 mins = None
-        if mins is not None:
+        if mins is not None and reg not in AGGREGATE_REGIONS:
             c = cmi[reg]
             c["cmi"] += (s.get("c") or 0) * mins
             c["inc"] += 1
@@ -3118,6 +3227,7 @@ def _emit_accountability(emit_dir, disc, spans, latest_ts, suspect=None):
 
 
 REGIONS_FOR_AUDIT = []
+AGGREGATE_REGIONS = set()   # feeds publishing county rollups, not point outages
 FIELD_SAMPLES = {}
 
 

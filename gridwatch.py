@@ -310,12 +310,14 @@ class Kubra:
         # MD/WV view serves Potomac Edison and Mon Power separately), so a
         # region can opt into merging every layer instead of picking one.
         if self.region.get("merge_layers"):
-            merged, hits = [], []
+            merged, hits = {}, []
             for layer in [f"cluster-{i}" for i in range(1, 8)]:
                 ctx["layer"] = layer
                 incidents, answered = self._descend(ctx)
                 if answered and incidents:
-                    merged.extend(incidents)
+                    # _descend hands back a dict keyed by outage identity;
+                    # merging must preserve that shape for _finish()
+                    merged.update(incidents)
                     hits.append(f"{layer}:{len(incidents)}")
             if hits:
                 print(f"[i] [{self.region['name']}] merged layers {', '.join(hits)}")
@@ -337,7 +339,7 @@ class Kubra:
             # silently pinned regions to a blank layer — the whole of northern
             # West Virginia went dark this way. Remember it and keep looking.
             if best is None:
-                best = incidents
+                best = incidents          # dict, matching _finish()'s contract
         print(f"[i] [{self.region['name']}] no tiles on any layer — region "
               f"is quiet (0 outages) across all cluster layers.")
         return self._finish({})
@@ -1139,6 +1141,14 @@ class PPLOmap(Kubra):
 
 
 class AvangridAPI(Kubra):
+    # Each opco is served from its own portal and the API validates the
+    # Origin header, so defaulting every opco to NYSEG's origin got RG&E and
+    # Central Maine Power rejected with an HTML error page (which then blew
+    # up as a JSONDecodeError rather than saying what was wrong).
+    ORIGINS = {"nyseg": "https://portal.nyseg.com",
+               "rge": "https://portal.rge.com",
+               "cmp": "https://portal.cmpco.com"}
+
     """Avangrid utilities (NYSEG, RG&E, CMP). REST behind an Apigee-style
     gateway needing an ocp-apim-subscription-key (public, from their JS).
       GET https://apim.avangrid.com/{opco}/v1/public/outagedata?...&filter=county
@@ -1164,13 +1174,21 @@ class AvangridAPI(Kubra):
         self.s.headers.update({
             "Accept": "application/json",
             "ocp-apim-subscription-key": key,
-            "Origin": self.region.get("origin", "https://portal.nyseg.com"),
+            "Origin": self.region.get("origin") or self.ORIGINS.get(
+                opco, "https://portal.nyseg.com"),
             "Referer": self.region.get("entry", ""),
             "User-Agent": IFactor.BROWSER_UA})
         r = self.s.get(f"{self.API}/{opco}/v1/public/outagedata?{params}",
                        timeout=30)
         r.raise_for_status()
-        data = r.json()
+        try:
+            data = r.json()
+        except ValueError:
+            body = (r.text or "")[:160].replace("\n", " ")
+            raise RuntimeError(
+                f"Avangrid {opco} returned non-JSON (HTTP {r.status_code}). "
+                f"Usually a wrong Origin header or an expired subscription "
+                f"key. Body starts: {body!r}")
         rows = (data.get("counties") or data.get("data")
                 or data.get("outages") or (data if isinstance(data, list) else []))
         out = []

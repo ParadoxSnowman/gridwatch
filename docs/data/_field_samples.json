@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-23T03:14:14+00:00",
+ "generated_at": "2026-11-23T13:02:20+00:00",
  "why": "diagnostic: identifying the real customers-affected field in each feed's payload",
  "feeds": {
   "VA-DOM": [
@@ -31,6 +31,33 @@
     }
    },
    {
+    "parsed_customers": 1,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 1
+     },
+     "inc_id": "40012020",
+     "crew_status": {
+      "EN-US": "Awaiting Assignment",
+      "es-US": "Esperando asignaci\u00f3n",
+      "orig": "Awaiting Assignment"
+     },
+     "cluster": false,
+     "etr": "ETR-NULL",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Pending Investigation",
+      "es-US": "Investigaci\u00f3n pendiente",
+      "orig": "Pending Investigation"
+     },
+     "crew_icon": false,
+     "start_time": null,
+     "etrRange": "Today at 11:00 AM - 2:00 PM"
+    }
+   },
+   {
     "parsed_customers": 11,
     "raw_desc": {
      "n_out": 8,
@@ -47,33 +74,6 @@
      "crew_icon": false,
      "start_time": null
     }
-   },
-   {
-    "parsed_customers": 25,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 25
-     },
-     "inc_id": "40009136",
-     "crew_status": {
-      "EN-US": "Assessing Damage",
-      "es-US": "Evaluando da\u00f1os",
-      "orig": "Assessing Damage"
-     },
-     "cluster": false,
-     "etr": "ETR-NULL",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Pending Investigation",
-      "es-US": "Investigaci\u00f3n pendiente",
-      "orig": "Pending Investigation"
-     },
-     "crew_icon": false,
-     "start_time": null,
-     "etrRange": "Reassessing Condition"
-    }
    }
   ],
   "OH": [
@@ -87,33 +87,32 @@
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "Preparing for Dispatch - The next available crew will be dispatched to investigate your outage.",
-      "orig": "Preparing for Dispatch"
+      "EN-US": "Additional Crews Requested - Due to the complexity of the repairs additional resources are required to safely restore power to your area.",
+      "orig": "Additional Crews Requested"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:30:00Z",
+     "etr": "2026-11-23T15:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
-      "EN-US": "Pending Investigation",
-      "orig": "Pending Investigation"
+      "EN-US": "Tree Damage",
+      "orig": "Tree Damage"
      },
      "crew_icon": false,
      "start_time": null
     }
    },
    {
-    "parsed_customers": 19,
+    "parsed_customers": 45,
     "raw_desc": {
      "n_out": 2,
      "cust_a": {
-      "val": 19,
-      "mask": 20
+      "val": 45
      },
      "inc_id": null,
      "crew_status": null,
      "cluster": true,
-     "etr": "2026-11-23T03:30:00Z",
+     "etr": "2026-11-23T15:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
@@ -131,11 +130,11 @@
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "Arrived - A crew is working to restore power. The crew may not be visible due to the location of the damage and may request additional assistance if needed.",
-      "orig": "Arrived"
+      "EN-US": "Preparing for Dispatch - The next available crew will be dispatched to investigate your outage.",
+      "orig": "Preparing for Dispatch"
      },
      "cluster": false,
-     "etr": "2026-11-23T03:30:00Z",
+     "etr": "2026-11-23T15:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -162,32 +161,7 @@
       "orig": "Additional Crews Requested"
      },
      "cluster": false,
-     "etr": "2026-11-23T03:30:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Animal Contact",
-      "orig": "Animal Contact"
-     },
-     "crew_icon": false,
-     "start_time": null
-    }
-   },
-   {
-    "parsed_customers": 19,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 19,
-      "mask": 20
-     },
-     "inc_id": null,
-     "crew_status": {
-      "EN-US": "Preparing for Crew Assessment - Your outage has been reported. Crews will be assigned to investigate.",
-      "orig": "Preparing for Crew Assessment"
-     },
-     "cluster": false,
-     "etr": "2026-11-23T03:30:00Z",
+     "etr": "2026-11-23T14:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -199,19 +173,43 @@
     }
    },
    {
-    "parsed_customers": 48,
+    "parsed_customers": 292,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 48
+      "val": 292
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "Arrived - A crew is working to restore power. The crew may not be visible due to the location of the damage and may request additional assistance if needed.",
-      "orig": "Arrived"
+      "EN-US": "Additional Crews Requested - Due to the complexity of the repairs additional resources are required to safely restore power to your area.",
+      "orig": "Additional Crews Requested"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:30:00Z",
+     "etr": "2026-11-23T15:00:00Z",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Pending Investigation",
+      "orig": "Pending Investigation"
+     },
+     "crew_icon": false,
+     "start_time": null
+    }
+   },
+   {
+    "parsed_customers": 39,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 39
+     },
+     "inc_id": null,
+     "crew_status": {
+      "EN-US": "Dispatched - A crew has been dispatched to restore your outage.",
+      "orig": "Dispatched"
+     },
+     "cluster": false,
+     "etr": "2026-11-23T14:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -225,36 +223,39 @@
   ],
   "BGE": [
    {
-    "parsed_customers": 14,
+    "parsed_customers": 4,
     "raw_desc": {
      "n_out": 2,
      "cust_a": {
-      "val": 14
+      "val": 4,
+      "mask": 5
      },
      "inc_id": null,
      "crew_status": null,
      "cluster": true,
-     "etr": "2026-11-23T06:00:00Z",
+     "etr": "2026-11-23T15:45:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-22T10:27:57Z"
+     "start_time": "2026-11-23T00:00:31Z"
     }
    },
    {
-    "parsed_customers": 79,
+    "parsed_customers": 4,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 79
+      "val": 4,
+      "mask": 5
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "We are working on assigning a crew"
+      "EN-US": "A repair crew is on the way",
+      "orig": "O"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:45:00Z",
+     "etr": "2026-11-23T14:45:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -262,188 +263,42 @@
       "orig": "018"
      },
      "crew_icon": false,
-     "start_time": "2026-11-23T02:58:50Z"
+     "start_time": "2026-11-23T11:44:57Z"
     }
    },
    {
     "parsed_customers": 4,
     "raw_desc": {
-     "n_out": 2,
+     "n_out": 1,
      "cust_a": {
       "val": 4,
       "mask": 5
      },
      "inc_id": null,
-     "crew_status": null,
-     "cluster": true,
-     "etr": "2026-11-23T06:00:00Z",
+     "crew_status": {
+      "EN-US": "A repair crew is on the way",
+      "orig": "O"
+     },
+     "cluster": false,
+     "etr": "2026-11-23T14:30:00Z",
      "etr_confidence": null,
      "comments": null,
-     "cause": null,
+     "cause": {
+      "EN-US": "An outage was reported in your area. We will update you as soon as we can",
+      "orig": "018"
+     },
      "crew_icon": false,
-     "start_time": "2026-11-23T00:00:31Z"
+     "start_time": "2026-11-23T11:37:38Z"
     }
    }
   ],
   "NY-NGRID": [
    {
-    "parsed_customers": 20,
+    "parsed_customers": 11,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 20
-     },
-     "inc_id": null,
-     "crew_status": {
-      "EN-US": "Arrived",
-      "ES-ES": "Lleg\u00f3",
-      "orig": "Arrived"
-     },
-     "cluster": false,
-     "etr": "2026-11-23T04:00:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Fallen Tree",
-      "ES-ES": "\u00c1rbol Ca\u00eddo",
-      "orig": "Tree - Fell"
-     },
-     "crew_icon": true,
-     "start_time": "2026-11-22T19:22:07Z",
-     "town": "Nelliston,Palatine"
-    }
-   },
-   {
-    "parsed_customers": 4,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 4,
-      "mask": 5
-     },
-     "inc_id": null,
-     "crew_status": {
-      "EN-US": "Unassigned",
-      "ES-ES": "Sin Asignar",
-      "orig": "Unassigned"
-     },
-     "cluster": false,
-     "etr": "ETR-EXP",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Under Investigation",
-      "ES-ES": "Bajo Investigaci\u00f3n",
-      "orig": "Null"
-     },
-     "crew_icon": false,
-     "start_time": "2026-11-22T21:02:04Z",
-     "town": "Saratoga Springs"
-    }
-   },
-   {
-    "parsed_customers": 20,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 20
-     },
-     "inc_id": null,
-     "crew_status": {
-      "EN-US": "Arrived",
-      "ES-ES": "Lleg\u00f3",
-      "orig": "Arrived"
-     },
-     "cluster": false,
-     "etr": "2026-11-23T04:00:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Fallen Tree",
-      "ES-ES": "\u00c1rbol Ca\u00eddo",
-      "orig": "Tree - Fell"
-     },
-     "crew_icon": true,
-     "start_time": "2026-11-22T19:22:07Z",
-     "town": "Nelliston,Palatine"
-    }
-   }
-  ],
-  "PECO": [
-   {
-    "parsed_customers": 95,
-    "raw_desc": {
-     "n_out": 5,
-     "cust_a": {
-      "val": 95
-     },
-     "inc_id": null,
-     "crew_status": null,
-     "cluster": true,
-     "etr": "ETR-NULL",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": null,
-     "crew_icon": false,
-     "start_time": null
-    }
-   },
-   {
-    "parsed_customers": 4,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 4,
-      "mask": 5
-     },
-     "inc_id": null,
-     "crew_status": {
-      "orig": " ",
-      "EN-US": " "
-     },
-     "cluster": false,
-     "etr": "ETR-NULL",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Under Evaluation"
-     },
-     "crew_icon": false,
-     "start_time": null
-    }
-   },
-   {
-    "parsed_customers": 4,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 4,
-      "mask": 5
-     },
-     "inc_id": null,
-     "crew_status": {
-      "orig": " ",
-      "EN-US": " "
-     },
-     "cluster": false,
-     "etr": "ETR-NULL",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Under Evaluation"
-     },
-     "crew_icon": false,
-     "start_time": null
-    }
-   }
-  ],
-  "MA-NGRID": [
-   {
-    "parsed_customers": 510,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 510
+      "val": 11
      },
      "inc_id": null,
      "crew_status": {
@@ -452,7 +307,7 @@
       "orig": "Assigned"
      },
      "cluster": false,
-     "etr": "2026-11-23T04:30:00Z",
+     "etr": "2026-11-23T16:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -461,7 +316,166 @@
       "orig": "Null"
      },
      "crew_icon": false,
-     "start_time": "2026-11-23T02:19:23Z",
+     "start_time": "2026-11-23T12:52:09Z",
+     "town": "Brockport"
+    }
+   },
+   {
+    "parsed_customers": 4,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 4,
+      "mask": 5
+     },
+     "inc_id": null,
+     "crew_status": {
+      "EN-US": "Assigned",
+      "ES-ES": "Asignado",
+      "orig": "Assigned"
+     },
+     "cluster": false,
+     "etr": "2026-11-23T16:15:00Z",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Under Investigation",
+      "ES-ES": "Bajo Investigaci\u00f3n",
+      "orig": "Null"
+     },
+     "crew_icon": false,
+     "start_time": "2026-11-23T12:42:04Z",
+     "town": "Canadice"
+    }
+   },
+   {
+    "parsed_customers": 4,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 4,
+      "mask": 5
+     },
+     "inc_id": null,
+     "crew_status": {
+      "EN-US": "Assigned",
+      "ES-ES": "Asignado",
+      "orig": "Assigned"
+     },
+     "cluster": false,
+     "etr": "2026-11-23T16:00:00Z",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Under Investigation",
+      "ES-ES": "Bajo Investigaci\u00f3n",
+      "orig": "Null"
+     },
+     "crew_icon": false,
+     "start_time": "2026-11-23T12:29:43Z",
+     "town": "Oswegatchie"
+    }
+   }
+  ],
+  "PECO": [
+   {
+    "parsed_customers": 4,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 4,
+      "mask": 5
+     },
+     "inc_id": null,
+     "crew_status": {
+      "orig": "Scheduling Crew",
+      "EN-US": "Scheduling Crew"
+     },
+     "cluster": false,
+     "etr": "ETR-NULL",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Under Evaluation"
+     },
+     "crew_icon": false,
+     "start_time": null
+    }
+   },
+   {
+    "parsed_customers": 4,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 4,
+      "mask": 5
+     },
+     "inc_id": null,
+     "crew_status": {
+      "orig": "Crew Dispatched",
+      "EN-US": "Crew Dispatched"
+     },
+     "cluster": false,
+     "etr": "ETR-NULL",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Under Evaluation"
+     },
+     "crew_icon": false,
+     "start_time": null
+    }
+   },
+   {
+    "parsed_customers": 177,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 177
+     },
+     "inc_id": null,
+     "crew_status": {
+      "orig": "Crew Dispatched",
+      "EN-US": "Crew Dispatched"
+     },
+     "cluster": false,
+     "etr": "ETR-NULL",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Cause Undetermined",
+      "orig": "00"
+     },
+     "crew_icon": false,
+     "start_time": null
+    }
+   }
+  ],
+  "MA-NGRID": [
+   {
+    "parsed_customers": 82,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 82
+     },
+     "inc_id": null,
+     "crew_status": {
+      "EN-US": "En Route",
+      "ES-ES": "En Ruta",
+      "orig": "Enroute"
+     },
+     "cluster": false,
+     "etr": "2026-11-23T14:30:00Z",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Under Investigation",
+      "ES-ES": "Bajo Investigaci\u00f3n",
+      "orig": "Unknown"
+     },
+     "crew_icon": false,
+     "start_time": "2026-11-23T04:16:15Z",
      "town": "Tyngsborough"
     }
    },
@@ -494,92 +508,6 @@
     }
    },
    {
-    "parsed_customers": 510,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 510
-     },
-     "inc_id": null,
-     "crew_status": {
-      "EN-US": "Assigned",
-      "ES-ES": "Asignado",
-      "orig": "Assigned"
-     },
-     "cluster": false,
-     "etr": "2026-11-23T04:30:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Under Investigation",
-      "ES-ES": "Bajo Investigaci\u00f3n",
-      "orig": "Null"
-     },
-     "crew_icon": false,
-     "start_time": "2026-11-23T02:19:23Z",
-     "town": "Tyngsborough"
-    }
-   }
-  ],
-  "NE-EVERSOURCE": [
-   {
-    "parsed_customers": 24,
-    "raw_desc": {
-     "inc_id": "W6146102-0",
-     "cluster": false,
-     "cust_a": {
-      "val": 24
-     },
-     "start": "2026-11-22T21:03:10-0500",
-     "etr": "2026-11-23T00:45:00-0500"
-    }
-   },
-   {
-    "parsed_customers": 4,
-    "raw_desc": {
-     "n_out": 2,
-     "cluster": true,
-     "cust_a": {
-      "val": 4,
-      "masked": true
-     },
-     "start": "2026-11-22T21:35:59-0500",
-     "etr": "2026-11-23T01:00:00-0500"
-    }
-   },
-   {
-    "parsed_customers": 5,
-    "raw_desc": {
-     "n_out": 2,
-     "cluster": true,
-     "cust_a": {
-      "val": 5
-     },
-     "start": "2026-11-22T21:59:03-0500",
-     "etr": "2026-11-22T23:45:00-0500"
-    }
-   }
-  ],
-  "DC-PEPCO": [
-   {
-    "parsed_customers": 21,
-    "raw_desc": {
-     "n_out": 2,
-     "cust_a": {
-      "val": 21
-     },
-     "inc_id": null,
-     "crew_status": null,
-     "cluster": true,
-     "etr": "2026-11-23T06:00:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": null,
-     "crew_icon": false,
-     "start_time": null
-    }
-   },
-   {
     "parsed_customers": 4,
     "raw_desc": {
      "n_out": 1,
@@ -590,57 +518,104 @@
      "inc_id": null,
      "crew_status": {
       "EN-US": "En Route",
-      "orig": "ENR"
+      "ES-ES": "En Ruta",
+      "orig": "Enroute"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:00:00Z",
+     "etr": "2026-11-23T14:15:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
-      "EN-US": "Under Evaluation",
-      "orig": "NA"
+      "EN-US": "Under Investigation",
+      "ES-ES": "Bajo Investigaci\u00f3n",
+      "orig": "Null"
      },
      "crew_icon": false,
-     "start_time": null
-    }
-   },
-   {
-    "parsed_customers": 14,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 14
-     },
-     "inc_id": null,
-     "crew_status": {
-      "EN-US": "On Site",
-      "orig": "ONS"
-     },
-     "cluster": false,
-     "etr": "2026-11-23T06:00:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": {
-      "EN-US": "Under Evaluation",
-      "orig": "NA"
-     },
-     "crew_icon": false,
-     "start_time": null
+     "start_time": "2026-11-23T12:10:25Z",
+     "town": "Gloucester"
     }
    }
   ],
-  "NJ-ACE": [
+  "NE-EVERSOURCE": [
    {
-    "parsed_customers": 7,
+    "parsed_customers": 4,
     "raw_desc": {
-     "n_out": 2,
+     "inc_id": "W6146132-0",
+     "cause": "EQUP",
+     "cluster": false,
      "cust_a": {
-      "val": 7
+      "val": 4,
+      "masked": true
+     },
+     "start": "2026-11-23T06:58:21-0500",
+     "etr": "2026-11-23T10:45:00-0500"
+    }
+   },
+   {
+    "parsed_customers": 4,
+    "raw_desc": {
+     "inc_id": "W6146145-0",
+     "cluster": false,
+     "cust_a": {
+      "val": 4,
+      "masked": true
+     },
+     "start": "2026-11-23T07:27:48-0500",
+     "etr": "2026-11-23T11:00:00-0500"
+    }
+   },
+   {
+    "parsed_customers": 4,
+    "raw_desc": {
+     "inc_id": "W6146129-0",
+     "cause": "TREE",
+     "cluster": false,
+     "cust_a": {
+      "val": 4,
+      "masked": true
+     },
+     "start": "2026-11-23T06:55:10-0500",
+     "etr": "2026-11-23T10:30:00-0500"
+    }
+   }
+  ],
+  "DE-DELMARVA": [
+   {
+    "parsed_customers": 1,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 1
+     },
+     "inc_id": "13184012",
+     "crew_status": {
+      "EN-US": "En Route",
+      "orig": "ENR"
+     },
+     "cluster": false,
+     "etr": "2026-11-23T15:00:00Z",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Under Evaluation",
+      "orig": "NA"
+     },
+     "crew_icon": false,
+     "start_time": null,
+     "feederID": "MD2210"
+    }
+   },
+   {
+    "parsed_customers": 158,
+    "raw_desc": {
+     "n_out": 6,
+     "cust_a": {
+      "val": 158
      },
      "inc_id": null,
      "crew_status": null,
      "cluster": true,
-     "etr": "2026-11-23T05:00:00Z",
+     "etr": "2026-11-23T17:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
@@ -655,13 +630,13 @@
      "cust_a": {
       "val": 1
      },
-     "inc_id": "13183871",
+     "inc_id": "13184005",
      "crew_status": {
       "EN-US": "On Site",
       "orig": "ONS"
      },
      "cluster": false,
-     "etr": "2026-11-23T06:00:00Z",
+     "etr": "2026-11-23T15:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -670,43 +645,25 @@
      },
      "crew_icon": false,
      "start_time": null,
-     "feederID": "NJ0429"
-    }
-   },
-   {
-    "parsed_customers": 7,
-    "raw_desc": {
-     "n_out": 2,
-     "cust_a": {
-      "val": 7
-     },
-     "inc_id": null,
-     "crew_status": null,
-     "cluster": true,
-     "etr": "2026-11-23T05:00:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": null,
-     "crew_icon": false,
-     "start_time": null
+     "feederID": "DE0534"
     }
    }
   ],
-  "DE-DELMARVA": [
+  "NJ-ACE": [
    {
-    "parsed_customers": 15,
+    "parsed_customers": 1,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 15
+      "val": 1
      },
-     "inc_id": "13183861",
+     "inc_id": "13184004",
      "crew_status": {
-      "EN-US": "On Site",
-      "orig": "ONS"
+      "EN-US": "Assigned",
+      "orig": "RCVD"
      },
      "cluster": false,
-     "etr": "2026-11-23T07:00:00Z",
+     "etr": "2026-11-23T16:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -715,41 +672,23 @@
      },
      "crew_icon": false,
      "start_time": null,
-     "feederID": "DE0729"
+     "feederID": "NJ0042"
     }
    },
    {
-    "parsed_customers": 2,
-    "raw_desc": {
-     "n_out": 2,
-     "cust_a": {
-      "val": 2
-     },
-     "inc_id": null,
-     "crew_status": null,
-     "cluster": true,
-     "etr": "2026-11-23T07:00:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": null,
-     "crew_icon": false,
-     "start_time": null
-    }
-   },
-   {
-    "parsed_customers": 15,
+    "parsed_customers": 1,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 15
+      "val": 1
      },
-     "inc_id": "13183861",
+     "inc_id": "13184011",
      "crew_status": {
-      "EN-US": "On Site",
-      "orig": "ONS"
+      "EN-US": "Assigned",
+      "orig": "RCVD"
      },
      "cluster": false,
-     "etr": "2026-11-23T07:00:00Z",
+     "etr": "2026-11-23T15:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -758,7 +697,32 @@
      },
      "crew_icon": false,
      "start_time": null,
-     "feederID": "DE0729"
+     "feederID": "NJ1146"
+    }
+   },
+   {
+    "parsed_customers": 1,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 1
+     },
+     "inc_id": "13183986",
+     "crew_status": {
+      "EN-US": "Assigned",
+      "orig": "RCVD"
+     },
+     "cluster": false,
+     "etr": "2026-11-23T16:00:00Z",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": {
+      "EN-US": "Under Evaluation",
+      "orig": "NA"
+     },
+     "crew_icon": false,
+     "start_time": null,
+     "feederID": "NJ0154"
     }
    }
   ],
@@ -771,19 +735,19 @@
       "val": 4,
       "mask": 5
      },
-     "inc_id": "3572241",
+     "inc_id": "3572521",
      "crew_status": {
-      "EN-US": "Assessing",
-      "es-US": "Evaluar",
-      "orig": "Dispatched"
+      "EN-US": "Working",
+      "es-US": "Trabajando",
+      "orig": "Arrived"
      },
      "cluster": false,
-     "etr": "2026-11-23T07:00:00Z",
+     "etr": "2026-11-23T13:45:26Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-23T02:45Z"
+     "start_time": "2026-11-23T12:31Z"
     }
    },
    {
@@ -794,38 +758,37 @@
       "val": 4,
       "mask": 5
      },
-     "inc_id": "3572221",
+     "inc_id": "3572411",
      "crew_status": {
-      "EN-US": "Working",
-      "es-US": "Trabajando",
-      "orig": "Arrived"
+      "EN-US": "Assessing",
+      "es-US": "Evaluar",
+      "orig": "En_Route"
      },
      "cluster": false,
-     "etr": "2026-11-23T07:30:00Z",
+     "etr": "2026-11-23T14:30:30Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-23T02:16Z"
+     "start_time": "2026-11-23T11:33Z"
     }
    },
    {
-    "parsed_customers": 4,
+    "parsed_customers": 9,
     "raw_desc": {
-     "n_out": 2,
+     "n_out": 4,
      "cust_a": {
-      "val": 4,
-      "mask": 5
+      "val": 9
      },
      "inc_id": null,
      "crew_status": null,
      "cluster": true,
-     "etr": "2026-11-23T07:00:00Z",
+     "etr": "2026-11-23T16:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-22T21:13Z"
+     "start_time": "2026-11-23T12:09Z"
     }
    }
   ],
@@ -842,7 +805,7 @@
      "crew_status": {
       "EN-US": "Assessing",
       "es-US": "Evaluar",
-      "orig": "Dispatched"
+      "orig": "New"
      },
      "cluster": false,
      "etr": "2026-11-23T17:00:00Z",
@@ -858,25 +821,26 @@
     }
    },
    {
-    "parsed_customers": 43,
+    "parsed_customers": 4,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 43
+      "val": 4,
+      "mask": 5
      },
-     "inc_id": "4548431",
+     "inc_id": "4548981",
      "crew_status": {
       "EN-US": "Assessing",
       "es-US": "Evaluar",
-      "orig": "In_Progress"
+      "orig": "Dispatched"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:00:00Z",
+     "etr": "2026-11-23T17:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-22T20:34Z"
+     "start_time": "2026-11-23T11:14Z"
     }
    },
    {
@@ -887,36 +851,54 @@
       "val": 4,
       "mask": 5
      },
-     "inc_id": "4548761",
+     "inc_id": "4549041",
      "crew_status": {
       "EN-US": "Assessing",
       "es-US": "Evaluar",
-      "orig": "En_Route"
+      "orig": "Dispatched"
      },
      "cluster": false,
-     "etr": "2026-11-23T10:30:00Z",
+     "etr": "2026-11-23T17:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-23T02:24Z"
+     "start_time": "2026-11-23T11:58Z"
     }
    }
   ],
   "NJ-PSEG": [
    {
-    "parsed_customers": 5,
+    "parsed_customers": 4,
+    "raw_desc": {
+     "n_out": 2,
+     "cust_a": {
+      "val": 4,
+      "mask": 5
+     },
+     "inc_id": null,
+     "crew_status": null,
+     "cluster": true,
+     "etr": "2026-11-23T15:30:00Z",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": null,
+     "crew_icon": false,
+     "start_time": "2026-11-23T09:22:22Z"
+    }
+   },
+   {
+    "parsed_customers": 4,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 5
+      "val": 4,
+      "mask": 5
      },
-     "inc_id": "OMS-11222026-00373",
-     "crew_status": {
-      "orig": "Acknowledged"
-     },
+     "inc_id": "OMS-11232026-00068",
+     "crew_status": {},
      "cluster": false,
-     "etr": "2026-11-23T06:30:00Z",
+     "etr": "2026-11-23T18:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -925,7 +907,7 @@
       "orig": "INV"
      },
      "crew_icon": false,
-     "start_time": "2026-11-23T02:04:50Z"
+     "start_time": "2026-11-23T12:18:16Z"
     }
    },
    {
@@ -939,94 +921,144 @@
      "inc_id": null,
      "crew_status": null,
      "cluster": true,
-     "etr": "2026-11-23T07:30:00Z",
+     "etr": "ETR-NULL",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-23T01:13:35Z"
+     "start_time": "2026-11-15T22:13:28Z"
+    }
+   }
+  ],
+  "SC-DOM": [
+   {
+    "parsed_customers": 1,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 1
+     },
+     "inc_id": null,
+     "crew_status": null,
+     "cluster": false,
+     "etr": "ETR-NULL",
+     "etr_confidence": null,
+     "comments": "Under Evaluation",
+     "cause": {
+      "orig": "Under Evaluation",
+      "EN-US": "Under Evaluation",
+      "es-US": "Under Evaluation"
+     },
+     "crew_icon": false,
+     "start_time": null
     }
    },
    {
-    "parsed_customers": 4,
+    "parsed_customers": 1,
     "raw_desc": {
-     "n_out": 4,
+     "n_out": 1,
      "cust_a": {
-      "val": 4,
-      "mask": 5
+      "val": 1
+     },
+     "inc_id": null,
+     "crew_status": null,
+     "cluster": false,
+     "etr": "ETR-NULL",
+     "etr_confidence": null,
+     "comments": "Under Evaluation",
+     "cause": {
+      "orig": "Under Evaluation",
+      "EN-US": "Under Evaluation",
+      "es-US": "Under Evaluation"
+     },
+     "crew_icon": false,
+     "start_time": null
+    }
+   },
+   {
+    "parsed_customers": 1,
+    "raw_desc": {
+     "n_out": 1,
+     "cust_a": {
+      "val": 1
+     },
+     "inc_id": null,
+     "crew_status": null,
+     "cluster": false,
+     "etr": "ETR-NULL",
+     "etr_confidence": null,
+     "comments": "Estimate Pending.\rWhile most outages are restored within 3 hours, some outages take longer.",
+     "cause": {
+      "orig": "Under Evaluation",
+      "EN-US": "Under Evaluation",
+      "es-US": "Under Evaluation"
+     },
+     "crew_icon": false,
+     "start_time": null
+    }
+   }
+  ],
+  "IN-IM": [
+   {
+    "parsed_customers": 29,
+    "raw_desc": {
+     "n_out": 2,
+     "cust_a": {
+      "val": 29
      },
      "inc_id": null,
      "crew_status": null,
      "cluster": true,
-     "etr": "2026-11-23T04:00:00Z",
+     "etr": "2026-11-23T16:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-22T17:05:09Z"
+     "start_time": "2026-11-23T03:49Z"
     }
-   }
-  ],
-  "NY-CENHUD": [
+   },
    {
-    "parsed_customers": 4,
+    "parsed_customers": 29,
+    "raw_desc": {
+     "n_out": 2,
+     "cust_a": {
+      "val": 29
+     },
+     "inc_id": null,
+     "crew_status": null,
+     "cluster": true,
+     "etr": "2026-11-23T16:30:00Z",
+     "etr_confidence": null,
+     "comments": null,
+     "cause": null,
+     "crew_icon": false,
+     "start_time": "2026-11-23T03:49Z"
+    }
+   },
+   {
+    "parsed_customers": 28,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 4,
-      "mask": 5
+      "val": 28
      },
-     "inc_id": null,
+     "inc_id": "2711981",
      "crew_status": {
-      "EN-US": "En Route",
-      "ES-ES": "En Ruta",
-      "orig": "en_route"
+      "EN-US": "Assessing",
+      "es-US": "Evaluar",
+      "orig": "In_Progress"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:30:00Z",
+     "etr": "2026-11-23T15:00:29Z",
      "etr_confidence": null,
      "comments": null,
-     "cause": null,
-     "crew_icon": true,
-     "start_time": "2026-11-23T02:06:02Z"
-    }
-   },
-   {
-    "parsed_customers": 4,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 4,
-      "mask": 5
+     "cause": {
+      "EN-US": "EQUIPMENT RELATED",
+      "es-US": "RELACIONADO CON EL EQUIPO",
+      "orig": "EQUIPMENT RELATED"
      },
-     "inc_id": null,
-     "crew_status": {},
-     "cluster": false,
-     "etr": "2026-11-23T06:00:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-23T02:53:37Z"
-    }
-   },
-   {
-    "parsed_customers": 4,
-    "raw_desc": {
-     "n_out": 1,
-     "cust_a": {
-      "val": 4,
-      "mask": 5
-     },
-     "inc_id": null,
-     "crew_status": {},
-     "cluster": false,
-     "etr": "2026-11-23T05:00:00Z",
-     "etr_confidence": null,
-     "comments": null,
-     "cause": null,
-     "crew_icon": false,
-     "start_time": "2026-11-23T01:37:55Z"
+     "start_time": "2026-11-23T03:49Z"
     }
    }
   ],
@@ -1034,18 +1066,26 @@
    {
     "parsed_customers": 4,
     "raw_desc": {
-     "n_out": 2,
+     "n_out": 1,
      "cust_a": {
       "val": 4,
       "mask": 5
      },
-     "inc_id": null,
-     "crew_status": null,
-     "cluster": true,
-     "etr": "2026-11-23T09:00:00Z",
+     "inc_id": "4479471",
+     "crew_status": {
+      "EN-US": "Assessing",
+      "es-US": "Evaluar",
+      "orig": "In_Progress"
+     },
+     "cluster": false,
+     "etr": "ETR-EXP",
      "etr_confidence": null,
      "comments": null,
-     "cause": null,
+     "cause": {
+      "EN-US": "CUSTOMER PROBLEM",
+      "es-US": "PROBLEMA DEL CLIENTE",
+      "orig": "CUSTOMER PROBLEM"
+     },
      "crew_icon": false,
      "start_time": "2026-11-02T13:07:51Z"
     }
@@ -1058,23 +1098,23 @@
       "val": 4,
       "mask": 5
      },
-     "inc_id": "4548061",
+     "inc_id": "4479471",
      "crew_status": {
-      "EN-US": "Working",
-      "es-US": "Trabajando",
-      "orig": "Arrived"
+      "EN-US": "Assessing",
+      "es-US": "Evaluar",
+      "orig": "In_Progress"
      },
      "cluster": false,
-     "etr": "2026-11-23T04:00:31Z",
+     "etr": "ETR-EXP",
      "etr_confidence": null,
      "comments": null,
      "cause": {
-      "EN-US": "EQUIPMENT RELATED",
-      "es-US": "RELACIONADO CON EL EQUIPO",
-      "orig": "EQUIPMENT RELATED"
+      "EN-US": "CUSTOMER PROBLEM",
+      "es-US": "PROBLEMA DEL CLIENTE",
+      "orig": "CUSTOMER PROBLEM"
      },
      "crew_icon": false,
-     "start_time": "2026-11-22T16:52Z"
+     "start_time": "2026-11-02T13:07:51Z"
     }
    },
    {
@@ -1107,17 +1147,16 @@
   ],
   "KY-LGEKU": [
    {
-    "parsed_customers": 4,
+    "parsed_customers": 7,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 4,
-      "mask": 5
+      "val": 7
      },
-     "inc_id": "26357636",
+     "inc_id": "26357702",
      "crew_status": null,
      "cluster": false,
-     "etr": "2026-11-23T05:30:00Z",
+     "etr": "2026-11-23T15:30:00Z",
      "etr_confidence": null,
      "comments": "This estimated time of restoration is based upon the time it usually takes to restore service for the type of outage reported. We will continue to update the estimate as more information becomes available. Please check back for updates.",
      "cause": {
@@ -1125,50 +1164,44 @@
       "orig": "Unknown"
      },
      "crew_icon": false,
-     "start_time": "2026-11-23T01:59:59Z"
+     "start_time": "2026-11-23T11:40:20.397936Z"
     }
    },
    {
     "parsed_customers": 4,
     "raw_desc": {
-     "n_out": 1,
+     "n_out": 2,
      "cust_a": {
       "val": 4,
       "mask": 5
      },
-     "inc_id": "26357629",
+     "inc_id": null,
      "crew_status": null,
-     "cluster": false,
-     "etr": "2026-11-23T04:00:00Z",
+     "cluster": true,
+     "etr": "2026-11-23T15:00:00Z",
      "etr_confidence": null,
-     "comments": "This estimated time of restoration is based upon the time it usually takes to restore service for the type of outage reported. We will continue to update the estimate as more information becomes available. Please check back for updates.",
-     "cause": {
-      "EN-US": "Unable to determine",
-      "orig": "Unknown"
-     },
+     "comments": null,
+     "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-23T01:46:14Z"
+     "start_time": "2026-11-23T11:01:19.895395Z"
     }
    },
    {
-    "parsed_customers": 8,
+    "parsed_customers": 7,
     "raw_desc": {
-     "n_out": 1,
+     "n_out": 2,
      "cust_a": {
-      "val": 8
+      "val": 7
      },
-     "inc_id": "26357632",
+     "inc_id": null,
      "crew_status": null,
-     "cluster": false,
-     "etr": "2026-11-23T05:30:00Z",
+     "cluster": true,
+     "etr": "2026-11-23T15:00:00Z",
      "etr_confidence": null,
-     "comments": "This estimated time of restoration is based upon the time it usually takes to restore service for the type of outage reported. We will continue to update the estimate as more information becomes available. Please check back for updates.",
-     "cause": {
-      "EN-US": "Unable to determine",
-      "orig": "Unknown"
-     },
+     "comments": null,
+     "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-23T01:57:28.576961Z"
+     "start_time": "2026-11-23T12:06:03Z"
     }
    }
   ],
@@ -1192,35 +1225,38 @@
       "orig": "NOCAUSE"
      },
      "crew_icon": false,
-     "start_time": "2026-11-23T02:49:18Z",
-     "lastFileUpdate": "2026-11-23T03:11:18.587Z"
+     "start_time": "2026-11-23T12:31:59Z",
+     "lastFileUpdate": "2026-11-23T12:51:13.763Z"
     }
    },
    {
-    "parsed_customers": 83,
+    "parsed_customers": 38,
     "raw_desc": {
-     "n_out": 3,
+     "n_out": 1,
      "cust_a": {
-      "val": 83
+      "val": 38
      },
      "inc_id": null,
      "crew_status": null,
-     "cluster": true,
+     "cluster": false,
      "etr": "ETR-NULL",
      "etr_confidence": null,
-     "comments": null,
-     "cause": null,
+     "comments": "Power problem is being assessed. A restoration estimate is in progress.",
+     "cause": {
+      "EN-US": "Pending crew assessment",
+      "orig": "NOCAUSE"
+     },
      "crew_icon": false,
-     "start_time": "2026-11-22T23:29:40Z"
+     "start_time": "2026-11-23T12:16:55Z",
+     "lastFileUpdate": "2026-11-23T12:51:13.763Z"
     }
    },
    {
-    "parsed_customers": 4,
+    "parsed_customers": 589,
     "raw_desc": {
      "n_out": 2,
      "cust_a": {
-      "val": 4,
-      "mask": 5
+      "val": 589
      },
      "inc_id": null,
      "crew_status": null,
@@ -1230,78 +1266,81 @@
      "comments": null,
      "cause": null,
      "crew_icon": false,
-     "start_time": "2026-11-23T02:18:31Z"
+     "start_time": "2026-11-23T09:16:02Z"
     }
    }
   ],
   "NJ": [
    {
-    "parsed_customers": 48,
+    "parsed_customers": 19,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 48
+      "val": 19,
+      "mask": 20
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "Arrived - A crew is working to restore power. The crew may not be visible due to the location of the damage and may request additional assistance if needed.",
-      "orig": "Arrived"
+      "EN-US": "Additional Crews Requested - Due to the complexity of the repairs additional resources are required to safely restore power to your area.",
+      "orig": "Additional Crews Requested"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:30:00Z",
+     "etr": "2026-11-23T14:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
-      "EN-US": "Pending Investigation",
-      "orig": "Pending Investigation"
+      "EN-US": "Tree Damage",
+      "orig": "Tree Damage"
      },
      "crew_icon": false,
      "start_time": null
     }
    },
    {
-    "parsed_customers": 48,
+    "parsed_customers": 19,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 48
+      "val": 19,
+      "mask": 20
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "Arrived - A crew is working to restore power. The crew may not be visible due to the location of the damage and may request additional assistance if needed.",
-      "orig": "Arrived"
+      "EN-US": "Additional Crews Requested - Due to the complexity of the repairs additional resources are required to safely restore power to your area.",
+      "orig": "Additional Crews Requested"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:30:00Z",
+     "etr": "2026-11-23T14:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
-      "EN-US": "Pending Investigation",
-      "orig": "Pending Investigation"
+      "EN-US": "Tree Damage",
+      "orig": "Tree Damage"
      },
      "crew_icon": false,
      "start_time": null
     }
    },
    {
-    "parsed_customers": 48,
+    "parsed_customers": 19,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 48
+      "val": 19,
+      "mask": 20
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "Arrived - A crew is working to restore power. The crew may not be visible due to the location of the damage and may request additional assistance if needed.",
-      "orig": "Arrived"
+      "EN-US": "Additional Crews Requested - Due to the complexity of the repairs additional resources are required to safely restore power to your area.",
+      "orig": "Additional Crews Requested"
      },
      "cluster": false,
-     "etr": "2026-11-23T05:30:00Z",
+     "etr": "2026-11-23T14:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
-      "EN-US": "Pending Investigation",
-      "orig": "Pending Investigation"
+      "EN-US": "Tree Damage",
+      "orig": "Tree Damage"
      },
      "crew_icon": false,
      "start_time": null
@@ -1323,7 +1362,7 @@
       "orig": "Preparing for Crew Assessment"
      },
      "cluster": false,
-     "etr": "2026-11-23T07:00:00Z",
+     "etr": "2026-11-23T16:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -1344,11 +1383,11 @@
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "Preparing for Crew Assessment - Your outage has been reported. Crews will be assigned to investigate.",
-      "orig": "Preparing for Crew Assessment"
+      "EN-US": "Arrived - A crew is working to restore power. The crew may not be visible due to the location of the damage and may request additional assistance if needed.",
+      "orig": "Arrived"
      },
      "cluster": false,
-     "etr": "2026-11-23T07:00:00Z",
+     "etr": "2026-11-23T16:00:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
@@ -1369,16 +1408,16 @@
      },
      "inc_id": null,
      "crew_status": {
-      "EN-US": "Preparing for Crew Assessment - Your outage has been reported. Crews will be assigned to investigate.",
-      "orig": "Preparing for Crew Assessment"
+      "EN-US": "Arrived - A crew is working to restore power. The crew may not be visible due to the location of the damage and may request additional assistance if needed.",
+      "orig": "Arrived"
      },
      "cluster": false,
-     "etr": "2026-11-23T07:00:00Z",
+     "etr": "2026-11-23T14:30:00Z",
      "etr_confidence": null,
      "comments": null,
      "cause": {
-      "EN-US": "Pending Investigation",
-      "orig": "Pending Investigation"
+      "EN-US": "Equipment Damage",
+      "orig": "Equipment Damage"
      },
      "crew_icon": false,
      "start_time": null
@@ -1397,7 +1436,7 @@
      "inc_id": null,
      "crew_status": null,
      "cluster": false,
-     "etr": "2026-11-23T05:15:00Z",
+     "etr": "2026-11-23T15:15:00Z",
      "etr_confidence": null,
      "comments": "An outage has been reported in your area. We are working to determine a restoration time.",
      "cause": null,
@@ -1416,7 +1455,7 @@
      "inc_id": null,
      "crew_status": null,
      "cluster": false,
-     "etr": "ETR-NULL",
+     "etr": "2026-11-23T14:45:00Z",
      "etr_confidence": null,
      "comments": "An outage has been reported in your area. We are working to determine a restoration time.",
      "cause": null,
@@ -1425,18 +1464,18 @@
     }
    },
    {
-    "parsed_customers": 5,
+    "parsed_customers": 466,
     "raw_desc": {
      "n_out": 1,
      "cust_a": {
-      "val": 5
+      "val": 466
      },
      "inc_id": null,
      "crew_status": null,
      "cluster": false,
-     "etr": "2026-11-23T06:15:00Z",
+     "etr": "ETR-NULL",
      "etr_confidence": null,
-     "comments": "An outage has been reported in your area. We are working to determine a restoration time.",
+     "comments": "A vehicle accident has caused an outage in your area. Most customers will be restored by the ERT shown.",
      "cause": null,
      "crew_icon": false,
      "start_time": null
